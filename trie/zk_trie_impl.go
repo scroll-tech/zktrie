@@ -17,6 +17,8 @@ const (
 
 var (
 	// ErrNodeKeyAlreadyExists is used when a node key already exists.
+	ErrInvalidField = errors.New("Key not inside the Finite Field")
+	// ErrNodeKeyAlreadyExists is used when a node key already exists.
 	ErrNodeKeyAlreadyExists = errors.New("key already exists")
 	// ErrKeyNotFound is used when a key is not found in the ZkTrieImpl.
 	ErrKeyNotFound = errors.New("key not found in ZkTrieImpl")
@@ -94,7 +96,7 @@ func (mt *ZkTrieImpl) tryUpdate(kHash *zkt.Hash, vFlag uint32, vPreimage []zkt.B
 
 	// verify that k are valid and fit inside the Finite Field.
 	if !zkt.CheckBigIntInField(kHash.BigInt()) {
-		return errors.New("Key not inside the Finite Field")
+		return ErrInvalidField
 	}
 
 	newNodeLeaf := NewNodeLeaf(kHash, vFlag, vPreimage)
@@ -595,7 +597,7 @@ func (mt *ZkTrieImpl) tryDelete(kHash *zkt.Hash) error {
 
 	// verify that k is valid and fit inside the Finite Field.
 	if !zkt.CheckBigIntInField(kHash.BigInt()) {
-		return errors.New("Key not inside the Finite Field")
+		return ErrInvalidField
 	}
 
 	path := getPath(mt.maxLevels, kHash[:])

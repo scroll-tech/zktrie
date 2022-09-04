@@ -40,8 +40,8 @@ type ZkTrie struct {
 // NewSecure creates a trie
 // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
 // underlying diskdb
-/*func NewZkTrie(root common.Hash, db *ZktrieDatabase) (*ZkTrie, error) {
-	rootHash, err := zkt.NewHashFromBytes(root.Bytes())
+func NewZkTrie(root []byte, db ZktrieDatabase) (*ZkTrie, error) {
+	rootHash, err := zkt.NewHashFromBytes(root)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ type ZkTrie struct {
 	return &ZkTrie{
 		tree: tree,
 	}, nil
-}*/
+}
 
 // Get returns the value for key stored in the trie.
 // The value bytes must not be modified by the caller.

@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"unsafe"
 
+	trie "github.com/scroll-tech/zktrie-util/trie"
 	zkt "github.com/scroll-tech/zktrie-util/types"
 )
 
@@ -60,6 +61,33 @@ func TestHashScheme() {
 func InitHashScheme(f unsafe.Pointer) {
 	hash_f := C.hashF(f)
 	C.init_hash_scheme(hash_f)
+}
+
+// create memory db
+//export NewMemoryDb
+func NewMemoryDb() unsafe.Pointer {
+	return unsafe.Pointer(trie.NewZkTrieMemoryDb())
+}
+
+// flush db with encoded trie-node bytes
+//export InitDbByNode
+func InitDbByNode(pDb unsafe.Pointer, data *C.uchar, sz C.int) *C.char {
+	db := (*trie.Database)(pDb)
+
+	bt := C.GoBytes(unsafe.Pointer(data), sz)
+	n, err := trie.DecodeSMTProof(bt)
+	if err != nil {
+		return C.CString(err.Error())
+	}
+
+	k, err := n.Key()
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	db.Init(k[:], bt)
+
+	return nil
+
 }
 
 // currently it is caller's responsibility to distinguish what

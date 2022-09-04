@@ -1,8 +1,6 @@
 package main
 
 /*
-#include <stdio.h>
-
 typedef char* (*hashF)(unsigned char*, unsigned char*, unsigned char*);
 
 hashF hash_scheme = NULL;
