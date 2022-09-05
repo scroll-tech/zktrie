@@ -137,27 +137,17 @@ func (t *ZkTrie) Copy() *ZkTrie {
 // If the trie does not contain a value for key, the returned proof contains all
 // nodes of the longest existing prefix of the key (at least the root node), ending
 // with the node that proves the absence of the key.
-func (t *ZkTrie) Prove(key []byte, fromLevel uint) error {
+func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
 	word := zkt.NewByte32FromBytesPaddingZero(key)
 	k, err := word.Hash()
 	if err != nil {
 		return err
 	}
 	err = t.tree.prove(zkt.NewHashFromBigInt(k), fromLevel, func(n *Node) error {
-		/*key, err := n.Key()
-		if err != nil {
-			return err
-		}
-
 		if n.Type == NodeTypeLeaf {
-			preImage := t.GetKey(n.NodeKey.Bytes())
-			if len(preImage) > 0 {
-				n.KeyPreimage = &zkt.Byte32{}
-				copy(n.KeyPreimage[:], preImage)
-				//return fmt.Errorf("key preimage not found for [%x] ref %x", n.NodeKey.Bytes(), k.Bytes())
-			}
-		}*/
-		return nil //proofDb.Put(key.Bytes(), n.Value())
+			n.KeyPreimage = zkt.NewByte32FromBytesPaddingZero(key)
+		}
+		return writeNode(n)
 	})
 	if err != nil {
 		return err
