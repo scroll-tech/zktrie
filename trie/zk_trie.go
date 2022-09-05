@@ -17,7 +17,6 @@
 package trie
 
 import (
-	"fmt"
 	"math/big"
 
 	zkt "github.com/scroll-tech/zktrie-util/types"
@@ -40,8 +39,8 @@ type ZkTrie struct {
 // NewSecure creates a trie
 // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
 // underlying diskdb
-func NewZkTrie(root []byte, db ZktrieDatabase) (*ZkTrie, error) {
-	rootHash, err := zkt.NewHashFromBytes(root)
+func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
+	rootHash, err := zkt.NewHashFromBytes(root.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -52,16 +51,6 @@ func NewZkTrie(root []byte, db ZktrieDatabase) (*ZkTrie, error) {
 	return &ZkTrie{
 		tree: tree,
 	}, nil
-}
-
-// Get returns the value for key stored in the trie.
-// The value bytes must not be modified by the caller.
-func (t *ZkTrie) Get(key []byte) []byte {
-	res, err := t.TryGet(key)
-	if err != nil {
-		panic(fmt.Sprintf("Unhandled trie error: %v", err))
-	}
-	return res
 }
 
 // TryGet returns the value for key stored in the trie.
@@ -84,37 +73,7 @@ func (t *ZkTrie) TryGetNode(path []byte) ([]byte, int, error) {
 }
 
 func (t *ZkTrie) updatePreimage(preimage []byte, hashField *big.Int) {
-	/*	db := t.tree.db.db
-		if db.preimages != nil { // Ugly direct check but avoids the below write lock
-			db.lock.Lock()
-			// we must copy the input key
-			db.insertPreimage(common.BytesToHash(hashField.Bytes()), common.CopyBytes(preimage))
-			db.lock.Unlock()
-		}*/
-}
-
-// TryUpdateAccount will abstract the write of an account to the
-// secure trie.
-/*func (t *ZkTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error {
-	keyPreimage := zkt.NewByte32FromBytesPaddingZero(key)
-	k, err := keyPreimage.Hash()
-	if err != nil {
-		return err
-	}
-	t.updatePreimage(key, k)
-	return t.tree.TryUpdateAccount(k.Bytes(), acc)
-}*/
-
-// Update associates key with value in the trie. Subsequent calls to
-// Get will return value. If value has length zero, any existing value
-// is deleted from the trie and calls to Get will return nil.
-//
-// The value bytes must not be modified by the caller while they are
-// stored in the trie.
-func (t *ZkTrie) Update(key, value []byte) {
-	if err := t.TryUpdate(key, value); err != nil {
-		panic(fmt.Sprintf("Unhandled trie error: %v", err))
-	}
+	t.tree.db.updatePreimage(preimage, hashField)
 }
 
 // TryUpdate associates key with value in the trie. Subsequent calls to
@@ -127,21 +86,14 @@ func (t *ZkTrie) Update(key, value []byte) {
 // If a node was not found in the database, a MissingNodeError is returned.
 //
 // NOTE: value is restricted to length of bytes32.
-func (t *ZkTrie) TryUpdate(key, value []byte) error {
+func (t *ZkTrie) TryUpdate(key []byte, vFlag uint32, vPreimage []zkt.Byte32) error {
 	keyPreimage := zkt.NewByte32FromBytesPaddingZero(key)
 	k, err := keyPreimage.Hash()
 	if err != nil {
 		return err
 	}
 	t.updatePreimage(key, k)
-	return t.tree.TryUpdate(k.Bytes(), value)
-}
-
-// Delete removes any existing value for key from the trie.
-func (t *ZkTrie) Delete(key []byte) {
-	if err := t.TryDelete(key); err != nil {
-		panic(fmt.Sprintf("Unhandled trie error: %v", err))
-	}
+	return t.tree.TryUpdate(zkt.NewHashFromBigInt(k), vFlag, vPreimage)
 }
 
 // TryDelete removes any existing value for key from the trie.
@@ -158,11 +110,7 @@ func (t *ZkTrie) TryDelete(key []byte) error {
 		return nil
 	}
 
-	zeroBt := make([]byte, 32)
-	// FIXME: delete should not be implemented as Update(0)
-	return t.tree.TryUpdate(k.Bytes(), zeroBt[:])
-	//kPreimage := smt.NewByte32FromBytesPadding(key)
-	//return t.tree.DeleteWord(kPreimage)
+	return t.tree.tryDeleteLite(zkt.NewHashFromBigInt(k))
 }
 
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the
@@ -181,23 +129,6 @@ func (t *ZkTrie) Copy() *ZkTrie {
 		tree: cpy,
 	}
 }
-
-// hashKey returns the hash of key as an ephemeral buffer.
-// The caller must not hold onto the return value because it will become
-// invalid on the next call to hashKey or secKey.
-/*func (t *ZkTrie) hashKey(key []byte) []byte {
-	if len(key) != 32 {
-		panic("non byte32 input to hashKey")
-	}
-	low16 := new(big.Int).SetBytes(key[:16])
-	high16 := new(big.Int).SetBytes(key[16:])
-	hash, err := poseidon.Hash([]*big.Int{low16, high16})
-	if err != nil {
-		panic(err)
-	}
-	return hash.Bytes()
-}
-*/
 
 // Prove constructs a merkle proof for key. The result contains all encoded nodes
 // on the path to the value at key. The value itself is also included in the last
