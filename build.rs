@@ -1,6 +1,6 @@
-use std::env;
-use std::path::Path;
+//use std::env;
 use std::io::{self, Write};
+use std::path::Path;
 
 fn main() {
     let lib_name = "zktrie";
@@ -30,7 +30,6 @@ fn main() {
         let p = Path::new(src);
         println!("cargo:rerun-if-changed={}", p.display());
     }
-    
 }
 
 fn fail(message: String) {
