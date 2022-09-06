@@ -109,6 +109,9 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 	n, err := trie.DecodeSMTProof(bt)
 	if err != nil {
 		return C.CString(err.Error())
+	} else if n == nil {
+		//skip magic string
+		return nil
 	}
 
 	k, err := n.Key()

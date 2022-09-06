@@ -533,4 +533,5 @@ dependencies = [
  "gobuild",
  "halo2-mpt-circuits",
  "halo2_proofs",
+ "hex",
 ]
