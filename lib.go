@@ -177,7 +177,7 @@ func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 	var vals []zkt.Byte32
 	start_ptr := uintptr(unsafe.Pointer(val_c))
-	for i := 0; i < int(key_sz); i += 32 {
+	for i := 0; i < int(val_sz); i += 32 {
 		vals = append(vals, *zkt.NewByte32FromBytes(C.GoBytes(unsafe.Pointer(start_ptr), 32)))
 		start_ptr += 32
 	}
@@ -229,7 +229,6 @@ func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Poin
 func TrieRoot(p C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(p)
 	tr := h.Value().(*trie.ZkTrie)
-	fmt.Printf("root is %x\n", tr.Hash())
 	return C.CBytes(tr.Hash())
 }
 

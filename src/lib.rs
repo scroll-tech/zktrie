@@ -329,8 +329,40 @@ mod tests {
         let root = hex::decode("079a038fbf78f25a2590e5a1d2fa34ce5e5f30e9a332713b43fa0e51b8770ab8").unwrap();
         let root : [u8; 32] = root.as_slice().try_into().unwrap();
 
-        let trie = db.new_trie(&root).unwrap();
+        let mut trie = db.new_trie(&root).unwrap();
         assert_eq!(trie.root(), root);
+
+        let acc_buf = hex::decode("4cb1aB63aF5D8931Ce09673EbD8ae2ce16fD6571").unwrap();
+
+        let acc_data = trie.get_account(&acc_buf).unwrap();
+
+        let mut nonce : [u8; 32] = hex::decode("00000000000000000000000000000000000000000000000000000000000000df").unwrap().as_slice().try_into().unwrap();
+        let balance : [u8; 32] = hex::decode("0056bc75e2d630ffffffffffffffffffffffffffffffffffff334673d90832be").unwrap().as_slice().try_into().unwrap();
+        let root : [u8; 32] = hex::decode("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap().as_slice().try_into().unwrap();
+        assert_eq!(acc_data[0], nonce);
+        assert_eq!(acc_data[1], balance);
+        assert_eq!(acc_data[2], root);
+
+        nonce[31] += 1;
+
+        let newacc : [[u8; 32];4] = [nonce, balance, root, [0;32]];
+        trie.update_account(&acc_buf, &newacc).unwrap();
+
+        let acc_data = trie.get_account(&acc_buf).unwrap();
+        assert_eq!(acc_data[0], nonce);
+        assert_eq!(acc_data[1], balance);
+        assert_eq!(acc_data[2], root);        
+
+        let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae").unwrap();
+        let root : [u8; 32] = root.as_slice().try_into().unwrap();        
+        assert_eq!(trie.root(), root);
+
+        let acc_buf = hex::decode("080B18Cb659f0a532D679E660C9841E1E0991Ae1").unwrap();
+        trie.update_account(&acc_buf, &newacc).unwrap();
+        let root = hex::decode("18d64b82ab828eb0195a633c327e4e10efaaf65a131357289f7d38eee9c71cf4").unwrap();
+        let root : [u8; 32] = root.as_slice().try_into().unwrap();        
+        assert_eq!(trie.root(), root);
+
     }
 
 }
