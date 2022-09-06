@@ -1,6 +1,6 @@
 use std::ffi::{self, c_char, c_int, c_void};
-use std::marker::{PhantomData, PhantomPinned};
 use std::fmt;
+use std::marker::{PhantomData, PhantomPinned};
 
 #[repr(C)]
 struct MemoryDb {
@@ -12,6 +12,13 @@ struct Trie {
     _data: [u8; 0],
     _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
+
+pub const HASHLEN: usize = 32;
+pub const FIELDSIZE: usize = 32;
+pub const ACCOUNTFIELDS: usize = 4;
+pub type Hash = [u8; HASHLEN];
+pub type StoreData = [u8; FIELDSIZE];
+pub type AccountData = [[u8; FIELDSIZE]; ACCOUNTFIELDS];
 
 pub type HashScheme = extern "C" fn(*const u8, *const u8, *mut u8) -> *const i8;
 type ProveCallback = extern "C" fn(*const u8, c_int, *mut c_void);
@@ -114,7 +121,7 @@ impl ZkMemoryDb {
     }
 
     // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(&mut self, root: &[u8; 32]) -> Option<ZkTrie> {
+    pub fn new_trie(&mut self, root: &Hash) -> Option<ZkTrie> {
         let ret = unsafe { NewZkTrie(root.as_ptr(), self.db.cast_const()) };
 
         if ret.is_null() {
@@ -143,11 +150,13 @@ impl ZkTrie {
         output.push(Vec::from(buf))
     }
 
-    pub fn root(&self) -> [u8; 32] {
+    pub fn root(&self) -> Hash {
         let root_p = unsafe { TrieRoot(self.trie) };
-        let root = unsafe { std::slice::from_raw_parts(root_p, 32) };
-        let root = root.try_into().expect("the buf has been set to specified bytes");
-        unsafe { FreeBuffer(root_p.cast())}
+        let root = unsafe { std::slice::from_raw_parts(root_p, HASHLEN) };
+        let root = root
+            .try_into()
+            .expect("the buf has been set to specified bytes");
+        unsafe { FreeBuffer(root_p.cast()) }
         root
     }
 
@@ -159,21 +168,24 @@ impl ZkTrie {
             None
         } else {
             let buf = unsafe { std::slice::from_raw_parts(ret, T) };
-            let buf = buf.try_into().expect("the buf has been set to specified bytes");
-            unsafe { FreeBuffer(ret.cast())}
+            let buf = buf
+                .try_into()
+                .expect("the buf has been set to specified bytes");
+            unsafe { FreeBuffer(ret.cast()) }
             Some(buf)
         }
     }
 
     // get value from storage trie
-    pub fn get_store(&self, key: &[u8]) -> Option<[u8; 32]> {
+    pub fn get_store(&self, key: &[u8]) -> Option<StoreData> {
         self.get::<32>(key)
     }
 
     // get account data from account trie
-    pub fn get_account(&self, key: &[u8]) -> Option<[[u8; 32]; 4]> {
-        self.get::<128>(key)
-            .map(|arr| unsafe { std::mem::transmute::<[u8; 128], [[u8; 32]; 4]>(arr) })
+    pub fn get_account(&self, key: &[u8]) -> Option<AccountData> {
+        self.get::<128>(key).map(|arr| unsafe {
+            std::mem::transmute::<[u8; FIELDSIZE * ACCOUNTFIELDS], AccountData>(arr)
+        })
     }
 
     // build prove array for mpt path
@@ -211,18 +223,18 @@ impl ZkTrie {
         }
     }
 
-    pub fn update_store(&mut self, key: &[u8], value: &[u8; 32]) -> Result<(), ErrString> {
+    pub fn update_store(&mut self, key: &[u8], value: &StoreData) -> Result<(), ErrString> {
         self.update(key, value)
     }
 
     pub fn update_account(
         &mut self,
         key: &[u8],
-        acc_fields: &[[u8; 32]; 4],
+        acc_fields: &AccountData,
     ) -> Result<(), ErrString> {
-        let acc_buf: &[u8; 128] = unsafe {
+        let acc_buf: &[u8; FIELDSIZE * ACCOUNTFIELDS] = unsafe {
             let ptr = acc_fields.as_ptr();
-            ptr.cast::<[u8; 128]>()
+            ptr.cast::<[u8; FIELDSIZE * ACCOUNTFIELDS]>()
                 .as_ref()
                 .expect("casted ptr can not be null")
         };
@@ -245,7 +257,8 @@ mod tests {
     use halo2_proofs::pairing::bn256::Fr;
     use mpt_circuits::hash::Hashable;
 
-    static HASH_ERROR: &'static str = "error";
+    static FILED_ERROR_READ: &'static str = "invalid input field";
+    static FILED_ERROR_OUT: &'static str = "output field fail";
 
     #[link(name = "zktrie")]
     extern "C" {
@@ -258,14 +271,24 @@ mod tests {
         let mut b = unsafe { slice::from_raw_parts(b, 32) };
         let mut out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
-        let fa = Fr::read(&mut a).unwrap();
-        let fb = Fr::read(&mut b).unwrap();
+        let fa = if let Ok(f) = Fr::read(&mut a) {
+            f
+        } else {
+            return FILED_ERROR_READ.as_ptr().cast();
+        };
+        let fb = if let Ok(f) = Fr::read(&mut b) {
+            f
+        } else {
+            return FILED_ERROR_READ.as_ptr().cast();
+        };
 
         let h = Fr::hash([fa, fb]);
 
-        h.write(&mut out).unwrap();
-
-        std::ptr::null()
+        if let Err(_) = h.write(&mut out) {
+            FILED_ERROR_OUT.as_ptr().cast()
+        } else {
+            std::ptr::null()
+        }
     }
 
     #[test]
@@ -320,14 +343,15 @@ mod tests {
     fn trie_works() {
         init_hash_scheme(hash_scheme);
         let mut db = ZkMemoryDb::new();
-        
+
         for bts in EXAMPLE {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
             db.add_node_bytes(&buf).unwrap();
         }
-        
-        let root = hex::decode("079a038fbf78f25a2590e5a1d2fa34ce5e5f30e9a332713b43fa0e51b8770ab8").unwrap();
-        let root : [u8; 32] = root.as_slice().try_into().unwrap();
+
+        let root = hex::decode("079a038fbf78f25a2590e5a1d2fa34ce5e5f30e9a332713b43fa0e51b8770ab8")
+            .unwrap();
+        let root: Hash = root.as_slice().try_into().unwrap();
 
         let mut trie = db.new_trie(&root).unwrap();
         assert_eq!(trie.root(), root);
@@ -336,33 +360,54 @@ mod tests {
 
         let acc_data = trie.get_account(&acc_buf).unwrap();
 
-        let mut nonce : [u8; 32] = hex::decode("00000000000000000000000000000000000000000000000000000000000000df").unwrap().as_slice().try_into().unwrap();
-        let balance : [u8; 32] = hex::decode("0056bc75e2d630ffffffffffffffffffffffffffffffffffff334673d90832be").unwrap().as_slice().try_into().unwrap();
-        let root : [u8; 32] = hex::decode("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap().as_slice().try_into().unwrap();
+        let mut nonce: StoreData =
+            hex::decode("00000000000000000000000000000000000000000000000000000000000000df")
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap();
+        let balance: StoreData =
+            hex::decode("0056bc75e2d630ffffffffffffffffffffffffffffffffffff334673d90832be")
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap();
+        let root: StoreData =
+            hex::decode("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap();
         assert_eq!(acc_data[0], nonce);
         assert_eq!(acc_data[1], balance);
         assert_eq!(acc_data[2], root);
 
         nonce[31] += 1;
 
-        let newacc : [[u8; 32];4] = [nonce, balance, root, [0;32]];
+        let newacc: AccountData = [nonce, balance, root, [0; FIELDSIZE]];
         trie.update_account(&acc_buf, &newacc).unwrap();
 
         let acc_data = trie.get_account(&acc_buf).unwrap();
         assert_eq!(acc_data[0], nonce);
         assert_eq!(acc_data[1], balance);
-        assert_eq!(acc_data[2], root);        
+        assert_eq!(acc_data[2], root);
 
-        let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae").unwrap();
-        let root : [u8; 32] = root.as_slice().try_into().unwrap();        
+        let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae")
+            .unwrap();
+        let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
         let acc_buf = hex::decode("080B18Cb659f0a532D679E660C9841E1E0991Ae1").unwrap();
         trie.update_account(&acc_buf, &newacc).unwrap();
-        let root = hex::decode("18d64b82ab828eb0195a633c327e4e10efaaf65a131357289f7d38eee9c71cf4").unwrap();
-        let root : [u8; 32] = root.as_slice().try_into().unwrap();        
+        let root = hex::decode("18d64b82ab828eb0195a633c327e4e10efaaf65a131357289f7d38eee9c71cf4")
+            .unwrap();
+        let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
+        trie.delete(&acc_buf);
+        let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae")
+            .unwrap();
+        let root: Hash = root.as_slice().try_into().unwrap();
+        assert_eq!(trie.root(), root);
     }
-
 }
