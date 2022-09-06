@@ -249,4 +249,11 @@ func TrieProve(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, callback unsafe.P
 	return nil
 }
 
+// obtain the hash
+//export TrieRoot
+func TrieRoot(p unsafe.Pointer) unsafe.Pointer {
+	tr := (*trie.ZkTrie)(p)
+	return C.CBytes(tr.Hash())
+}
+
 func main() {}
