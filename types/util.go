@@ -4,8 +4,6 @@ import (
 	"math/big"
 )
 
-var hashScheme func([]*big.Int) (*big.Int, error)
-
 // HashElems performs a recursive poseidon hash over the array of ElemBytes, each hash
 // reduce 2 fieds into one
 func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {

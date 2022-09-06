@@ -4,9 +4,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"sync"
 )
 
 var Q *big.Int
+var setHashScheme sync.Once
+var hashNotInitErr = fmt.Errorf("hash scheme is not setup yet, call InitHashScheme before using the library")
+
+func dummyHash([]*big.Int) (*big.Int, error) {
+	return big.NewInt(0), hashNotInitErr
+}
+
+var hashScheme func([]*big.Int) (*big.Int, error) = dummyHash
 
 func init() {
 
@@ -16,6 +25,12 @@ func init() {
 	if !ok {
 		panic(fmt.Sprintf("Bad base 10 string %s", qString))
 	}
+}
+
+func InitHashScheme(f func([]*big.Int) (*big.Int, error)) {
+	setHashScheme.Do(func() {
+		hashScheme = f
+	})
 }
 
 // CheckBigIntInField checks if given *big.Int fits in a Field Q element
