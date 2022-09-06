@@ -1,7 +1,7 @@
 package main
 
 /*
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 typedef char* (*hashF)(unsigned char*, unsigned char*, unsigned char*);
@@ -17,8 +17,9 @@ void bridge_prove_write(proveWriteF f, unsigned char* key, unsigned char* val, i
 import "C"
 import (
 	"errors"
+	"fmt"
 	"math/big"
-	"sync"
+	"runtime/cgo"
 	"unsafe"
 
 	"github.com/scroll-tech/zktrie-util/trie"
@@ -26,21 +27,6 @@ import (
 )
 
 var zeros = [32]byte{}
-
-type globalCollect struct {
-	sync.Mutex
-	dbs   map[*trie.Database]struct{}
-	tries map[*trie.ZkTrie]struct{}
-}
-
-var globalCollection *globalCollect
-
-func init() {
-	globalCollection = &globalCollect{
-		dbs:   make(map[*trie.Database]struct{}),
-		tries: make(map[*trie.ZkTrie]struct{}),
-	}
-}
 
 func hash_external(inp []*big.Int) (*big.Int, error) {
 	if len(inp) != 2 {
@@ -50,7 +36,8 @@ func hash_external(inp []*big.Int) (*big.Int, error) {
 	b := zkt.ReverseByteOrder(inp[1].Bytes())
 
 	a = append(a, zeros[0:(32-len(a))]...)
-	b = append(b, zeros[0:(32-len(a))]...)
+	b = append(b, zeros[0:(32-len(b))]...)
+
 	c := make([]byte, 32)
 
 	err := C.bridge_hash((*C.uchar)(&a[0]), (*C.uchar)(&b[0]), (*C.uchar)(&c[0]))
@@ -71,7 +58,7 @@ func TestHashScheme() {
 	expected := big.NewInt(0)
 	expected.UnmarshalText([]byte("7853200120776062878684798364095072458815029376092732009249414926327459813530"))
 	if h1.Cmp(expected) != 0 {
-		panic(h1)
+		panic(fmt.Errorf("unexpected poseidon hash value: %s", h1))
 	}
 }
 
@@ -80,32 +67,31 @@ func TestHashScheme() {
 func InitHashScheme(f unsafe.Pointer) {
 	hash_f := C.hashF(f)
 	C.init_hash_scheme(hash_f)
+	zkt.InitHashScheme(hash_external)
 }
 
 // create memory db
 //export NewMemoryDb
-func NewMemoryDb() unsafe.Pointer {
+func NewMemoryDb() C.uintptr_t {
 	// it break the cgo's enforcement (C code can not store Go pointer after return)
 	// but it should be ok for we have kept reference in the global object
 	ret := trie.NewZkTrieMemoryDb()
-	globalCollection.Lock()
-	defer globalCollection.Unlock()
-	globalCollection.dbs[ret] = struct{}{}
 
-	return unsafe.Pointer(ret)
+	return C.uintptr_t(cgo.NewHandle(ret))
+}
+
+func freeObject(p C.uintptr_t) {
+	h := cgo.Handle(p)
+	h.Delete()
 }
 
 // free created memory db
 //export FreeMemoryDb
-func FreeMemoryDb(p unsafe.Pointer) {
-	db := (*trie.Database)(p)
-	globalCollection.Lock()
-	defer globalCollection.Unlock()
-	if _, existed := globalCollection.dbs[db]; !existed {
-		panic("try free unassigned db object")
-	}
-	delete(globalCollection.dbs, db)
-}
+func FreeMemoryDb(p C.uintptr_t) { freeObject(p) }
+
+// free created trie
+//export FreeZkTrie
+func FreeZkTrie(p C.uintptr_t) { freeObject(p) }
 
 // free buffers being returned, like error strings or trie value
 //export FreeBuffer
@@ -115,8 +101,9 @@ func FreeBuffer(p unsafe.Pointer) {
 
 // flush db with encoded trie-node bytes
 //export InitDbByNode
-func InitDbByNode(pDb unsafe.Pointer, data *C.uchar, sz C.int) *C.char {
-	db := (*trie.Database)(pDb)
+func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
+	h := cgo.Handle(pDb)
+	db := h.Value().(*trie.Database)
 
 	bt := C.GoBytes(unsafe.Pointer(data), sz)
 	n, err := trie.DecodeSMTProof(bt)
@@ -136,40 +123,25 @@ func InitDbByNode(pDb unsafe.Pointer, data *C.uchar, sz C.int) *C.char {
 
 // the input root must be 32bytes (or more, but only first 32bytes would be recognized)
 //export NewZkTrie
-func NewZkTrie(root_c *C.uchar, pDb unsafe.Pointer) unsafe.Pointer {
-	db := (*trie.Database)(pDb)
+func NewZkTrie(root_c *C.uchar, pDb C.uintptr_t) C.uintptr_t {
+	h := cgo.Handle(pDb)
+	db := h.Value().(*trie.Database)
 	root := C.GoBytes(unsafe.Pointer(root_c), 32)
 
 	zktrie, err := trie.NewZkTrie(*zkt.NewByte32FromBytes(root), db)
 	if err != nil {
-		return nil
+		return 0
 	}
 
-	globalCollection.Lock()
-	defer globalCollection.Unlock()
-
-	globalCollection.tries[zktrie] = struct{}{}
-
-	return unsafe.Pointer(zktrie)
-}
-
-// free created zktrie
-//export FreeZkTrie
-func FreeZkTrie(p unsafe.Pointer) {
-	tr := (*trie.ZkTrie)(p)
-	globalCollection.Lock()
-	defer globalCollection.Unlock()
-	if _, existed := globalCollection.tries[tr]; !existed {
-		panic("try free unassigned zktrie object")
-	}
-	delete(globalCollection.tries, tr)
+	return C.uintptr_t(cgo.NewHandle(zktrie))
 }
 
 // currently it is caller's responsibility to distinguish what
 // the returned buffer is byte32 or encoded account data (4x32bytes fields)
 //export TrieGet
-func TrieGet(p unsafe.Pointer, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
-	tr := (*trie.ZkTrie)(p)
+func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 
 	v, err := tr.TryGet(key)
@@ -187,7 +159,7 @@ func TrieGet(p unsafe.Pointer, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 
 // update only accept encoded buffer, and flag is derived automatically from buffer size (account data or store val)
 //export TrieUpdate
-func TrieUpdate(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val_sz C.int) *C.char {
+func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val_sz C.int) *C.char {
 
 	if val_sz != 32 && val_sz != 128 {
 		return C.CString("unexpected buffer type")
@@ -200,7 +172,8 @@ func TrieUpdate(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, val_c *C.uchar, 
 		vFlag = 1
 	}
 
-	tr := (*trie.ZkTrie)(p)
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 	var vals []zkt.Byte32
 	start_ptr := uintptr(unsafe.Pointer(val_c))
@@ -218,16 +191,18 @@ func TrieUpdate(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, val_c *C.uchar, 
 
 // delete leaf, silently omit any error
 //export TrieDelete
-func TrieDelete(p unsafe.Pointer, key_c *C.uchar, key_sz C.int) {
-	tr := (*trie.ZkTrie)(p)
+func TrieDelete(p C.uintptr_t, key_c *C.uchar, key_sz C.int) {
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 	tr.TryDelete(key)
 }
 
 // output prove, only the val part is output for callback
 //export TrieProve
-func TrieProve(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, callback unsafe.Pointer, cb_param unsafe.Pointer) *C.char {
-	tr := (*trie.ZkTrie)(p)
+func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Pointer, cb_param unsafe.Pointer) *C.char {
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 	err := tr.Prove(key, 0, func(n *trie.Node) error {
 
@@ -251,8 +226,10 @@ func TrieProve(p unsafe.Pointer, key_c *C.uchar, key_sz C.int, callback unsafe.P
 
 // obtain the hash
 //export TrieRoot
-func TrieRoot(p unsafe.Pointer) unsafe.Pointer {
-	tr := (*trie.ZkTrie)(p)
+func TrieRoot(p C.uintptr_t) unsafe.Pointer {
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
+	fmt.Printf("root is %x\n", tr.Hash())
 	return C.CBytes(tr.Hash())
 }
 
