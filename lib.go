@@ -209,7 +209,7 @@ func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Poin
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
 	err := tr.Prove(key, 0, func(n *trie.Node) error {
 
-		dt := n.Data()
+		dt := n.Value()
 
 		C.bridge_prove_write(
 			C.proveWriteF(callback),
@@ -224,6 +224,16 @@ func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Poin
 	if err != nil {
 		return C.CString(err.Error())
 	}
+
+	tailingLine := trie.ProofMagicBytes()
+	C.bridge_prove_write(
+		C.proveWriteF(callback),
+		nil, //do not need to prove node key
+		(*C.uchar)(&tailingLine[0]),
+		C.int(len(tailingLine)),
+		cb_param,
+	)
+
 	return nil
 }
 

@@ -409,5 +409,12 @@ mod tests {
             .unwrap();
         let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
+
+        let acc_buf = hex::decode("4cb1aB63aF5D8931Ce09673EbD8ae2ce16fD6571").unwrap();
+        let proof = trie.prove(&acc_buf);
+
+        assert_eq!(proof.len(), 10);
+        assert_eq!(proof[9], hex::decode("5448495320495320534f4d45204d4147494320425954455320464f5220534d54206d3172525867503278704449").unwrap());
+        assert_eq!(proof[3], hex::decode("0018ed59d5017a460600179c674f819292fe410f58d6ac8251a2d4b87fe4d0fb2422de217a821ca10394e3c0f7a99762e37d87f50e2a61f48a154a26a4c4c7c5e7").unwrap());
     }
 }
