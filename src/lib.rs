@@ -372,7 +372,7 @@ mod tests {
                 .as_slice()
                 .try_into()
                 .unwrap();
-        let root: StoreData =
+        let code_hash: StoreData =
             hex::decode("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
                 .unwrap()
                 .as_slice()
@@ -380,17 +380,17 @@ mod tests {
                 .unwrap();
         assert_eq!(acc_data[0], nonce);
         assert_eq!(acc_data[1], balance);
-        assert_eq!(acc_data[2], root);
+        assert_eq!(acc_data[2], code_hash);
 
         nonce[31] += 1;
 
-        let newacc: AccountData = [nonce, balance, root, [0; FIELDSIZE]];
+        let newacc: AccountData = [nonce, balance, code_hash, [0; FIELDSIZE]];
         trie.update_account(&acc_buf, &newacc).unwrap();
 
         let acc_data = trie.get_account(&acc_buf).unwrap();
         assert_eq!(acc_data[0], nonce);
         assert_eq!(acc_data[1], balance);
-        assert_eq!(acc_data[2], root);
+        assert_eq!(acc_data[2], code_hash);
 
         let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae")
             .unwrap();
