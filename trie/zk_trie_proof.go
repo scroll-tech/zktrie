@@ -3,7 +3,7 @@ package trie
 import (
 	"bytes"
 
-	zkt "github.com/scroll-tech/zktrie-util/types"
+	zkt "github.com/scroll-tech/zktrie/types"
 )
 
 var magicSMTBytes []byte

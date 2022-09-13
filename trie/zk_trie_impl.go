@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	zkt "github.com/scroll-tech/zktrie-util/types"
+	zkt "github.com/scroll-tech/zktrie/types"
 )
 
 const (

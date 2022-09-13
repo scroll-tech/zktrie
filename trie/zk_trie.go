@@ -19,7 +19,7 @@ package trie
 import (
 	"math/big"
 
-	zkt "github.com/scroll-tech/zktrie-util/types"
+	zkt "github.com/scroll-tech/zktrie/types"
 )
 
 // ZkTrie wraps a trie with key hashing. In a secure trie, all

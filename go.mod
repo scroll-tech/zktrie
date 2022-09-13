@@ -1,3 +1,3 @@
-module github.com/scroll-tech/zktrie-util
+module github.com/scroll-tech/zktrie
 
 go 1.18

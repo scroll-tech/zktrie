@@ -1,4 +1,4 @@
-# zktrie_util
+# zktrie
 
 Wrap the zktrie go module in [l2geth](http://github.com/scroll-tech/go-ethereum) for rust
 
@@ -65,7 +65,7 @@ Add `Cargo.toml` under `[dependencies]`:
 
 ```toml
 [dependencies]
-zktrie_util = { git = "https://https://github.com/scroll-tech/zktrie-util.git" }
+zktrie = { git = "https://https://github.com/scroll-tech/zktrie.git" }
 ```
 
 ## License

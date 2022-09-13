@@ -1,5 +1,5 @@
 [package]
-name = "zktrie_util"
+name = "zktrie"
 version = "0.1.0"
 edition = "2021"
 

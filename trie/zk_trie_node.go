@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	zkt "github.com/scroll-tech/zktrie-util/types"
+	zkt "github.com/scroll-tech/zktrie/types"
 )
 
 // NodeType defines the type of node in the MT.
