@@ -70,6 +70,51 @@ func InitHashScheme(f unsafe.Pointer) {
 	zkt.InitHashScheme(hash_external)
 }
 
+// parse raw bytes and create the trie node
+//export NewTrieNode
+func NewTrieNode(data *C.char, sz C.int) C.uintptr_t {
+	bt := C.GoBytes(unsafe.Pointer(data), sz)
+	n, err := trie.NewNodeFromBytes(bt)
+	if err != nil {
+		return 0
+	}
+
+	// calculate key for caching
+	if _, err := n.Key(); err != nil {
+		return 0
+	}
+
+	return C.uintptr_t(cgo.NewHandle(n))
+}
+
+// obtain the key hash, must be free by caller
+//export TrieNodeKey
+func TrieNodeKey(pN C.uintptr_t) unsafe.Pointer {
+	h := cgo.Handle(pN)
+	n := h.Value().(*trie.Node)
+
+	k, _ := n.Key()
+	return C.CBytes(k.Bytes())
+}
+
+// obtain the value hash for leaf node (must be free by caller), or nil for other
+//export TrieLeafNodeValueHash
+func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
+	h := cgo.Handle(pN)
+	n := h.Value().(*trie.Node)
+
+	if n.Type != trie.NodeTypeLeaf {
+		return nil
+	}
+
+	k, _ := n.ValueKey()
+	return C.CBytes(k.Bytes())
+}
+
+// free created trie node
+//export FreeTrieNode
+func FreeTrieNode(p C.uintptr_t) { freeObject(p) }
+
 // create memory db
 //export NewMemoryDb
 func NewMemoryDb() C.uintptr_t {

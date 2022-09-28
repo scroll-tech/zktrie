@@ -12,6 +12,11 @@ struct Trie {
     _data: [u8; 0],
     _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
+#[repr(C)]
+struct TrieNode {
+    _data: [u8; 0],
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 pub const HASHLEN: usize = 32;
 pub const FIELDSIZE: usize = 32;
@@ -49,6 +54,10 @@ extern "C" {
         cb: ProveCallback,
         param: *mut c_void,
     );
+    fn NewTrieNode(data: *const u8, data_sz: c_int) -> *const TrieNode;
+    fn FreeTrieNode(node: *const TrieNode);
+    fn TrieNodeKey(node: *const TrieNode) -> *const u8;
+    fn TrieLeafNodeValueHash(node: *const TrieNode) -> *const u8;
 }
 
 pub fn init_hash_scheme(f: HashScheme) {
@@ -84,6 +93,19 @@ impl ToString for ErrString {
     }
 }
 
+fn must_get_const_bytes<const T: usize>(p: *const u8) -> [u8; T] {
+    let byptes = unsafe { std::slice::from_raw_parts(p, T) };
+    let byptes = byptes
+        .try_into()
+        .expect("the buf has been set to specified bytes");
+    unsafe { FreeBuffer(p.cast()) }
+    byptes
+}
+
+fn must_get_hash(p: *const u8) -> Hash {
+    must_get_const_bytes::<HASHLEN>(p)
+}
+
 pub struct ZkMemoryDb {
     db: *mut MemoryDb,
 }
@@ -91,6 +113,37 @@ pub struct ZkMemoryDb {
 impl Drop for ZkMemoryDb {
     fn drop(&mut self) {
         unsafe { FreeMemoryDb(self.db) };
+    }
+}
+
+pub struct ZkTrieNode {
+    trie_node: *const TrieNode,
+}
+
+impl Drop for ZkTrieNode {
+    fn drop(&mut self) {
+        unsafe { FreeTrieNode(self.trie_node) };
+    }
+}
+
+impl ZkTrieNode {
+    pub fn parse(data: &[u8]) -> Self {
+        Self {
+            trie_node: unsafe { NewTrieNode(data.as_ptr(), data.len() as c_int) },
+        }
+    }
+
+    pub fn key(&self) -> Hash {
+        must_get_hash(unsafe { TrieNodeKey(self.trie_node) })
+    }
+
+    pub fn value_hash(&self) -> Option<Hash> {
+        let key_p = unsafe { TrieLeafNodeValueHash(self.trie_node) };
+        if key_p.is_null() {
+            None
+        } else {
+            Some(must_get_hash(key_p))
+        }
     }
 }
 
@@ -151,13 +204,7 @@ impl ZkTrie {
     }
 
     pub fn root(&self) -> Hash {
-        let root_p = unsafe { TrieRoot(self.trie) };
-        let root = unsafe { std::slice::from_raw_parts(root_p, HASHLEN) };
-        let root = root
-            .try_into()
-            .expect("the buf has been set to specified bytes");
-        unsafe { FreeBuffer(root_p.cast()) }
-        root
+        must_get_hash(unsafe { TrieRoot(self.trie) })
     }
 
     // all errors are reduced to "not found"
@@ -167,12 +214,7 @@ impl ZkTrie {
         if ret.is_null() {
             None
         } else {
-            let buf = unsafe { std::slice::from_raw_parts(ret, T) };
-            let buf = buf
-                .try_into()
-                .expect("the buf has been set to specified bytes");
-            unsafe { FreeBuffer(ret.cast()) }
-            Some(buf)
+            Some(must_get_const_bytes::<T>(ret))
         }
     }
 
@@ -257,8 +299,8 @@ mod tests {
     use halo2_proofs::pairing::bn256::Fr;
     use mpt_circuits::hash::Hashable;
 
-    static FILED_ERROR_READ: &'static str = "invalid input field";
-    static FILED_ERROR_OUT: &'static str = "output field fail";
+    static FILED_ERROR_READ: &str = "invalid input field";
+    static FILED_ERROR_OUT: &str = "output field fail";
 
     #[link(name = "zktrie")]
     extern "C" {
@@ -284,7 +326,7 @@ mod tests {
 
         let h = Fr::hash([fa, fb]);
 
-        if let Err(_) = h.write(&mut out) {
+        if h.write(&mut out).is_err() {
             FILED_ERROR_OUT.as_ptr().cast()
         } else {
             std::ptr::null()
@@ -299,7 +341,7 @@ mod tests {
         }
     }
 
-    static EXAMPLE : [&'static str;37] = [
+    static EXAMPLE : [&str;37] = [
             "0x00206372de1e9b006b4104d57ee366871a32eed87731d7e6bcb2b84c605784ba072a84f0cee483739d84d15ba1b0f131900a20b41bc3b52e1b11af816095d49e34",
             "0x0007e14b4527ba2121b4c7b7256a6b0aa6bcedfe0b6f503cea362ea9ddd9f967b92b42961b4531b48a39e50771bff69e37850a57fb7d62604208a6a17f5c045069",
             "0x00147ac10f6d84c10d215f7265ae98d378dbe705fa1028c9ebe73a4d239e48142511e03b7714e0d6a43dbbb5cd94bf3e821b34527bcfefeb1d52ba78aa33c180f0",
@@ -416,5 +458,17 @@ mod tests {
         assert_eq!(proof.len(), 10);
         assert_eq!(proof[9], hex::decode("5448495320495320534f4d45204d4147494320425954455320464f5220534d54206d3172525867503278704449").unwrap());
         assert_eq!(proof[3], hex::decode("0018ed59d5017a460600179c674f819292fe410f58d6ac8251a2d4b87fe4d0fb2422de217a821ca10394e3c0f7a99762e37d87f50e2a61f48a154a26a4c4c7c5e7").unwrap());
+
+        let node = ZkTrieNode::parse(&proof[8]);
+        assert_eq!(
+            node.key().as_slice(),
+            hex::decode("03913cd940cf5cf31a07b9b87d04d92eff246f76ab76d6a08806b1516d956973")
+                .unwrap()
+        );
+        assert_eq!(
+            node.value_hash().unwrap().as_slice(),
+            hex::decode("02b84b0bd92ebd4dc276e06bd4041c94cfd58cdfe2ac82b09f944f90d5c9398d")
+                .unwrap()
+        );
     }
 }
