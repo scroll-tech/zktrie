@@ -94,12 +94,12 @@ impl ToString for ErrString {
 }
 
 fn must_get_const_bytes<const T: usize>(p: *const u8) -> [u8; T] {
-    let byptes = unsafe { std::slice::from_raw_parts(p, T) };
-    let byptes = byptes
+    let bytes = unsafe { std::slice::from_raw_parts(p, T) };
+    let bytes = bytes
         .try_into()
         .expect("the buf has been set to specified bytes");
     unsafe { FreeBuffer(p.cast()) }
-    byptes
+    bytes
 }
 
 fn must_get_hash(p: *const u8) -> Hash {
