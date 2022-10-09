@@ -89,3 +89,15 @@ func BigEndianBitsToBigInt(bits []bool) *big.Int {
 	}
 	return result
 }
+
+// KeyToSecureHash turn the byte key into a "secured" hash
+func KeyToSecureHash(key []byte) (*Hash, error) {
+
+	word := NewByte32FromBytesPaddingZero(key)
+	k, err := word.Hash()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewHashFromBigInt(k), nil
+}
