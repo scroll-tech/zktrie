@@ -252,7 +252,12 @@ func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Poin
 	h := cgo.Handle(p)
 	tr := h.Value().(*trie.ZkTrie)
 	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
-	err := tr.Prove(key, 0, func(n *trie.Node) error {
+	s_key, err := zkt.KeyToSecureHash(key)
+	if err != nil {
+		return C.CString(err.Error())
+	}
+
+	err = tr.Prove(s_key.Bytes(), 0, func(n *trie.Node) error {
 
 		dt := n.Value()
 

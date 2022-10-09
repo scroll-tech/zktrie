@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
@@ -371,24 +372,10 @@ func (mt *ZkTrieImpl) tryGet(kHash *zkt.Hash) (*Node, []*zkt.Hash, error) {
 	return nil, siblings, ErrReachedMaxLevel
 }
 
-// Get returns the value for key stored in the trie.
-// The value bytes must not be modified by the caller.
-func (mt *ZkTrieImpl) Get(key []byte) []byte {
-	res, err := mt.TryGet(key)
-	if err != nil {
-		panic(fmt.Sprintf("Unhandled trie error: %v", err))
-	}
-	return res
-}
-
 // TryGet returns the value for key stored in the trie.
 // The value bytes must not be modified by the caller.
 // If a node was not found in the database, a MissingNodeError is returned.
-func (mt *ZkTrieImpl) TryGet(key []byte) ([]byte, error) {
-	kHash, err := zkt.NewHashFromBytes(zkt.NewByte32FromBytes(key).Bytes())
-	if err != nil {
-		return nil, err
-	}
+func (mt *ZkTrieImpl) TryGet(kHash *zkt.Hash) ([]byte, error) {
 
 	node, _, err := mt.tryGet(kHash)
 	if err == ErrKeyNotFound {
@@ -411,6 +398,16 @@ func (mt *ZkTrieImpl) GetLeafNodeByWord(kPreimage *zkt.Byte32) (*Node, error) {
 	return n, err
 }
 
+// Deprecated: only for testing
+func (mt *ZkTrieImpl) UpdateWord(kPreimage, vPreimage *zkt.Byte32) error {
+	k, err := kPreimage.Hash()
+	if err != nil {
+		return err
+	}
+
+	return mt.TryUpdate(zkt.NewHashFromBigInt(k), 1, []zkt.Byte32{*vPreimage})
+}
+
 // Delete removes the specified Key from the ZkTrieImpl and updates the path
 // from the deleted key to the Root with the new values.  This method removes
 // the key from the ZkTrieImpl, but does not remove the old nodes from the
@@ -421,7 +418,7 @@ func (mt *ZkTrieImpl) GetLeafNodeByWord(kPreimage *zkt.Byte32) (*Node, error) {
 // import them in a new ZkTrieImpl in a new database (using
 // mt.ImportDumpedLeafs), but this will lose all the Root history of the
 // ZkTrieImpl
-func (mt *ZkTrieImpl) tryDelete(kHash *zkt.Hash) error {
+func (mt *ZkTrieImpl) TryDelete(kHash *zkt.Hash) error {
 	// verify that the ZkTrieImpl is writable
 	if !mt.writable {
 		return ErrNotWritable
@@ -467,24 +464,13 @@ func (mt *ZkTrieImpl) tryDelete(kHash *zkt.Hash) error {
 	return ErrKeyNotFound
 }
 
-// TryDelete removes any existing value for key from the trie.
-// If a node was not found in the database, a MissingNodeError is returned.
-func (mt *ZkTrieImpl) TryDelete(key []byte) error {
-	kHash, err := zkt.NewHashFromBytes(zkt.NewByte32FromBytes(key).Bytes())
-	if err != nil {
-		return err
-	}
-
-	return mt.tryDelete(kHash)
-}
-
 // Deprecated: only for testing
 func (mt *ZkTrieImpl) DeleteWord(kPreimage *zkt.Byte32) error {
 	k, err := kPreimage.Hash()
 	if err != nil {
 		return err
 	}
-	return mt.tryDelete(zkt.NewHashFromBigInt(k))
+	return mt.TryDelete(zkt.NewHashFromBigInt(k))
 }
 
 // rmAndUpload removes the key, and goes up until the root updating all the
@@ -625,6 +611,53 @@ type Proof struct {
 	// Key is the key of leaf in existence case
 	Key     *zkt.Hash
 	NodeAux *NodeAux
+}
+
+// BuildZkTrieProof prove uniformed way to turn some data collections into Proof struct
+func BuildZkTrieProof(rootKey *zkt.Hash, k *big.Int, lvl int, getNode func(key *zkt.Hash) (*Node, error)) (*Proof,
+	*Node, error) {
+
+	p := &Proof{}
+	var siblingKey *zkt.Hash
+
+	kHash := zkt.NewHashFromBigInt(k)
+	path := getPath(lvl, kHash[:])
+
+	nextKey := rootKey
+	for p.depth = 0; p.depth < uint(lvl); p.depth++ {
+		n, err := getNode(nextKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		switch n.Type {
+		case NodeTypeEmpty:
+			return p, n, nil
+		case NodeTypeLeaf:
+			if bytes.Equal(kHash[:], n.NodeKey[:]) {
+				p.Existence = true
+				return p, n, nil
+			}
+			// We found a leaf whose entry didn't match hIndex
+			p.NodeAux = &NodeAux{Key: n.NodeKey, Value: n.valueHash}
+			return p, n, nil
+		case NodeTypeMiddle:
+			if path[p.depth] {
+				nextKey = n.ChildR
+				siblingKey = n.ChildL
+			} else {
+				nextKey = n.ChildL
+				siblingKey = n.ChildR
+			}
+		default:
+			return nil, nil, ErrInvalidNodeFound
+		}
+		if !bytes.Equal(siblingKey[:], zkt.HashZero[:]) {
+			zkt.SetBitBigEndian(p.notempties[:], p.depth)
+			p.Siblings = append(p.Siblings, siblingKey)
+		}
+	}
+	return nil, nil, ErrKeyNotFound
+
 }
 
 // VerifyProof verifies the Merkle Proof for the entry and root.

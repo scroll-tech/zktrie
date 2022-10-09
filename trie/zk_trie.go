@@ -57,13 +57,17 @@ func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
 // The value bytes must not be modified by the caller.
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *ZkTrie) TryGet(key []byte) ([]byte, error) {
-	word := zkt.NewByte32FromBytesPaddingZero(key)
-	k, err := word.Hash()
+	k, err := zkt.KeyToSecureHash(key)
 	if err != nil {
 		return nil, err
 	}
 
-	return t.tree.TryGet(k.Bytes())
+	return t.tree.TryGet(k)
+}
+
+// Tree exposed underlying ZkTrieImpl
+func (t *ZkTrie) Tree() *ZkTrieImpl {
+	return t.tree
 }
 
 // TryGetNode attempts to retrieve a trie node by compact-encoded path. It is not
@@ -87,30 +91,28 @@ func (t *ZkTrie) updatePreimage(preimage []byte, hashField *big.Int) {
 //
 // NOTE: value is restricted to length of bytes32.
 func (t *ZkTrie) TryUpdate(key []byte, vFlag uint32, vPreimage []zkt.Byte32) error {
-	keyPreimage := zkt.NewByte32FromBytesPaddingZero(key)
-	k, err := keyPreimage.Hash()
+	k, err := zkt.KeyToSecureHash(key)
 	if err != nil {
 		return err
 	}
-	t.updatePreimage(key, k)
-	return t.tree.TryUpdate(zkt.NewHashFromBigInt(k), vFlag, vPreimage)
+	t.updatePreimage(key, k.BigInt())
+	return t.tree.TryUpdate(k, vFlag, vPreimage)
 }
 
 // TryDelete removes any existing value for key from the trie.
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *ZkTrie) TryDelete(key []byte) error {
-	keyPreimage := zkt.NewByte32FromBytesPaddingZero(key)
-	k, err := keyPreimage.Hash()
+	k, err := zkt.KeyToSecureHash(key)
 	if err != nil {
 		return err
 	}
 
 	//mitigate the create-delete issue: do not delete unexisted key
-	if r := t.tree.Get(k.Bytes()); r == nil {
+	if r, _ := t.tree.TryGet(k); r == nil {
 		return nil
 	}
 
-	return t.tree.tryDeleteLite(zkt.NewHashFromBigInt(k))
+	return t.tree.tryDeleteLite(k)
 }
 
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the
@@ -138,12 +140,13 @@ func (t *ZkTrie) Copy() *ZkTrie {
 // nodes of the longest existing prefix of the key (at least the root node), ending
 // with the node that proves the absence of the key.
 func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
-	word := zkt.NewByte32FromBytesPaddingZero(key)
-	k, err := word.Hash()
+	// notice Prove in secure trie "pass through" the key instead of secure it
+	// this keep consistent behavior with geth's secure trie
+	k, err := zkt.NewHashFromBytes(key)
 	if err != nil {
 		return err
 	}
-	err = t.tree.prove(zkt.NewHashFromBigInt(k), fromLevel, func(n *Node) error {
+	err = t.tree.prove(k, fromLevel, func(n *Node) error {
 		if n.Type == NodeTypeLeaf {
 			n.KeyPreimage = zkt.NewByte32FromBytesPaddingZero(key)
 		}
