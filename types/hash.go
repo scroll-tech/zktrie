@@ -71,7 +71,7 @@ func (h Hash) String() string {
 
 // Hex returns the hexadecimal representation of the Hash
 func (h Hash) Hex() string {
-	return hex.EncodeToString(h[:])
+	return hex.EncodeToString(h.Bytes())
 }
 
 // BigInt returns the *big.Int representation of the *Hash
