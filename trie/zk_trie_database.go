@@ -6,9 +6,9 @@ import (
 )
 
 type ZktrieDatabase interface {
-	updatePreimage(preimage []byte, hashField *big.Int)
-	put(k, v []byte) error
-	get(key []byte) ([]byte, error)
+	UpdatePreimage(preimage []byte, hashField *big.Int)
+	Put(k, v []byte) error
+	Get(key []byte) ([]byte, error)
 }
 
 type Database struct {
@@ -16,9 +16,9 @@ type Database struct {
 	lock sync.RWMutex
 }
 
-func (db *Database) updatePreimage([]byte, *big.Int) {}
+func (db *Database) UpdatePreimage([]byte, *big.Int) {}
 
-func (db *Database) put(k, v []byte) error {
+func (db *Database) Put(k, v []byte) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -26,7 +26,7 @@ func (db *Database) put(k, v []byte) error {
 	return nil
 }
 
-func (db *Database) get(key []byte) ([]byte, error) {
+func (db *Database) Get(key []byte) ([]byte, error) {
 	db.lock.RLock()
 	defer db.lock.RUnlock()
 
