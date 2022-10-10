@@ -77,7 +77,7 @@ func (t *ZkTrie) TryGetNode(path []byte) ([]byte, int, error) {
 }
 
 func (t *ZkTrie) updatePreimage(preimage []byte, hashField *big.Int) {
-	t.tree.db.updatePreimage(preimage, hashField)
+	t.tree.db.UpdatePreimage(preimage, hashField)
 }
 
 // TryUpdate associates key with value in the trie. Subsequent calls to

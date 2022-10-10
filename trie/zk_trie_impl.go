@@ -306,7 +306,7 @@ func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 	}
 	v := n.Value()
 	// Check that the node key doesn't already exist
-	oldV, err := mt.db.get(k[:])
+	oldV, err := mt.db.Get(k[:])
 	if err == nil {
 		if !bytes.Equal(oldV, v) {
 			return nil, ErrNodeKeyAlreadyExists
@@ -315,7 +315,7 @@ func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 			return k, nil
 		}
 	}
-	err = mt.db.put(k[:], v)
+	err = mt.db.Put(k[:], v)
 	return k, err
 }
 
@@ -334,7 +334,7 @@ func (mt *ZkTrieImpl) updateNode(n *Node) (*zkt.Hash, error) {
 		return nil, err
 	}
 	v := n.Value()
-	err = mt.db.put(k[:], v)
+	err = mt.db.Put(k[:], v)
 	return k, err
 }
 
@@ -561,7 +561,7 @@ func (mt *ZkTrieImpl) recalculatePathUntilRoot(path []bool, node *Node,
 // transaction.
 func (mt *ZkTrieImpl) dbInsert(k []byte, t NodeType, data []byte) error {
 	v := append([]byte{byte(t)}, data...)
-	return mt.db.put(k, v)
+	return mt.db.Put(k, v)
 }
 
 // GetNode gets a node by key from the MT.  Empty nodes are not stored in the
@@ -571,7 +571,7 @@ func (mt *ZkTrieImpl) GetNode(key *zkt.Hash) (*Node, error) {
 	if bytes.Equal(key[:], zkt.HashZero[:]) {
 		return NewNodeEmpty(), nil
 	}
-	nBytes, err := mt.db.get(key[:])
+	nBytes, err := mt.db.Get(key[:])
 	if err == ErrKeyNotFound {
 		//return NewNodeEmpty(), nil
 		return nil, ErrKeyNotFound
