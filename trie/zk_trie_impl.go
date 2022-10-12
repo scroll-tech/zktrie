@@ -387,27 +387,6 @@ func (mt *ZkTrieImpl) TryGet(kHash *zkt.Hash) ([]byte, error) {
 	return node.Data(), nil
 }
 
-// GetLeafNodeByWord
-// Deprecated: Get a Bytes32 kv to ZkTrieImpl, only for testing
-func (mt *ZkTrieImpl) GetLeafNodeByWord(kPreimage *zkt.Byte32) (*Node, error) {
-	k, err := kPreimage.Hash()
-	if err != nil {
-		return nil, err
-	}
-	n, _, err := mt.tryGet(zkt.NewHashFromBigInt(k))
-	return n, err
-}
-
-// Deprecated: only for testing
-func (mt *ZkTrieImpl) UpdateWord(kPreimage, vPreimage *zkt.Byte32) error {
-	k, err := kPreimage.Hash()
-	if err != nil {
-		return err
-	}
-
-	return mt.TryUpdate(zkt.NewHashFromBigInt(k), 1, []zkt.Byte32{*vPreimage})
-}
-
 // Delete removes the specified Key from the ZkTrieImpl and updates the path
 // from the deleted key to the Root with the new values.  This method removes
 // the key from the ZkTrieImpl, but does not remove the old nodes from the
@@ -462,15 +441,6 @@ func (mt *ZkTrieImpl) TryDelete(kHash *zkt.Hash) error {
 	}
 
 	return ErrKeyNotFound
-}
-
-// Deprecated: only for testing
-func (mt *ZkTrieImpl) DeleteWord(kPreimage *zkt.Byte32) error {
-	k, err := kPreimage.Hash()
-	if err != nil {
-		return err
-	}
-	return mt.TryDelete(zkt.NewHashFromBigInt(k))
 }
 
 // rmAndUpload removes the key, and goes up until the root updating all the
@@ -562,6 +532,13 @@ func (mt *ZkTrieImpl) recalculatePathUntilRoot(path []bool, node *Node,
 func (mt *ZkTrieImpl) dbInsert(k []byte, t NodeType, data []byte) error {
 	v := append([]byte{byte(t)}, data...)
 	return mt.db.Put(k, v)
+}
+
+// GetLeafNode is more underlying method than TryGet, which obtain an leaf node
+// or nil if not exist
+func (mt *ZkTrieImpl) GetLeafNode(key *zkt.Hash) (*Node, error) {
+	n, _, err := mt.tryGet(key)
+	return n, err
 }
 
 // GetNode gets a node by key from the MT.  Empty nodes are not stored in the

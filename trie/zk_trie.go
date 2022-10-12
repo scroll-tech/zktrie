@@ -40,11 +40,8 @@ type ZkTrie struct {
 // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
 // underlying diskdb
 func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
-	rootHash, err := zkt.NewHashFromBytes(root.Bytes())
-	if err != nil {
-		return nil, err
-	}
-	tree, err := NewZkTrieImplWithRoot((db), rootHash, 256)
+
+	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), 256)
 	if err != nil {
 		return nil, err
 	}
@@ -57,12 +54,12 @@ func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
 // The value bytes must not be modified by the caller.
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *ZkTrie) TryGet(key []byte) ([]byte, error) {
-	k, err := zkt.KeyToSecureHash(key)
+	k, err := zkt.ToSecureKey(key)
 	if err != nil {
 		return nil, err
 	}
 
-	return t.tree.TryGet(k)
+	return t.tree.TryGet(zkt.NewHashFromBigInt(k))
 }
 
 // Tree exposed underlying ZkTrieImpl
@@ -91,28 +88,29 @@ func (t *ZkTrie) updatePreimage(preimage []byte, hashField *big.Int) {
 //
 // NOTE: value is restricted to length of bytes32.
 func (t *ZkTrie) TryUpdate(key []byte, vFlag uint32, vPreimage []zkt.Byte32) error {
-	k, err := zkt.KeyToSecureHash(key)
+	k, err := zkt.ToSecureKey(key)
 	if err != nil {
 		return err
 	}
-	t.updatePreimage(key, k.BigInt())
-	return t.tree.TryUpdate(k, vFlag, vPreimage)
+	t.updatePreimage(key, k)
+	return t.tree.TryUpdate(zkt.NewHashFromBigInt(k), vFlag, vPreimage)
 }
 
 // TryDelete removes any existing value for key from the trie.
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *ZkTrie) TryDelete(key []byte) error {
-	k, err := zkt.KeyToSecureHash(key)
+	k, err := zkt.ToSecureKey(key)
 	if err != nil {
 		return err
 	}
 
+	kHash := zkt.NewHashFromBigInt(k)
 	//mitigate the create-delete issue: do not delete unexisted key
-	if r, _ := t.tree.TryGet(k); r == nil {
+	if r, _ := t.tree.TryGet(kHash); r == nil {
 		return nil
 	}
 
-	return t.tree.tryDeleteLite(k)
+	return t.tree.tryDeleteLite(kHash)
 }
 
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the
@@ -142,7 +140,7 @@ func (t *ZkTrie) Copy() *ZkTrie {
 func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
 	// notice Prove in secure trie "pass through" the key instead of secure it
 	// this keep consistent behavior with geth's secure trie
-	k, err := zkt.NewHashFromBytes(key)
+	k, err := zkt.NewHashFromCheckedBytes(key)
 	if err != nil {
 		return err
 	}

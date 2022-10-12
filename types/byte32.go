@@ -1,7 +1,6 @@
 package zktrie
 
 import (
-	"fmt"
 	"math/big"
 )
 
@@ -33,10 +32,8 @@ func NewByte32FromBytes(b []byte) *Byte32 {
 	return byte32
 }
 
+// create bytes32 with zeropadding to shorter bytes, or truncate it
 func NewByte32FromBytesPaddingZero(b []byte) *Byte32 {
-	if len(b) != 32 && len(b) != 20 {
-		panic(fmt.Errorf("do not support length except for 120bit and 256bit now. data: %v len: %v", b, len(b)))
-	}
 	byte32 := new(Byte32)
 	copy(byte32[:], b)
 	return byte32
