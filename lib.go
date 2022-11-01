@@ -163,7 +163,7 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 	if err != nil {
 		return C.CString(err.Error())
 	}
-	db.Init(k[:], bt)
+	db.Init(k[:], n.CanonicalValue())
 
 	return nil
 

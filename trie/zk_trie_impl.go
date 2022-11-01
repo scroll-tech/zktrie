@@ -304,11 +304,12 @@ func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := n.Value()
+	v := n.CanonicalValue()
 	// Check that the node key doesn't already exist
 	oldV, err := mt.db.Get(k[:])
 	if err == nil {
 		if !bytes.Equal(oldV, v) {
+			fmt.Printf("fail on conflicted key: %v, old value %x and new %x\n", k, oldV, v)
 			return nil, ErrNodeKeyAlreadyExists
 		} else {
 			// duplicated
@@ -333,7 +334,7 @@ func (mt *ZkTrieImpl) updateNode(n *Node) (*zkt.Hash, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := n.Value()
+	v := n.CanonicalValue()
 	err = mt.db.Put(k[:], v)
 	return k, err
 }

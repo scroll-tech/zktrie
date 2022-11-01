@@ -173,9 +173,10 @@ func (n *Node) Data() []byte {
 	}
 }
 
-// Value returns the value of the node.  This is the content that is stored in
-// the backend database.
-func (n *Node) Value() []byte {
+// CanonicalValue returns the byte form of a node required to be persisted, and strip unnecessary fields
+// from the encoding (current only KeyPreimage for Leaf node) to keep a minimum size for content being
+// stored in backend storage
+func (n *Node) CanonicalValue() []byte {
 	switch n.Type {
 	case NodeTypeMiddle: // {Type || ChildL || ChildR}
 		bytes := []byte{byte(n.Type)}
@@ -192,19 +193,27 @@ func (n *Node) Value() []byte {
 		for _, elm := range n.ValuePreimage {
 			bytes = append(bytes, elm[:]...)
 		}
-		if n.KeyPreimage != nil {
-			bytes = append(bytes, byte(len(n.KeyPreimage)))
-			bytes = append(bytes, n.KeyPreimage[:]...)
-		} else {
-			bytes = append(bytes, 0)
-		}
-
+		bytes = append(bytes, 0)
 		return bytes
 	case NodeTypeEmpty: // { Type }
 		return []byte{byte(n.Type)}
 	default:
 		return []byte{}
 	}
+}
+
+// Value returns the encoded bytes of a node, include all information of it
+func (n *Node) Value() []byte {
+	outBytes := n.CanonicalValue()
+	switch n.Type {
+	case NodeTypeLeaf: // {Type || Data...}
+		if n.KeyPreimage != nil {
+			outBytes[len(outBytes)-1] = byte(len(n.KeyPreimage))
+			outBytes = append(outBytes, n.KeyPreimage[:]...)
+		}
+	}
+
+	return outBytes
 }
 
 // String outputs a string representation of a node (different for each type).
