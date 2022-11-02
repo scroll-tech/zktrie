@@ -175,7 +175,7 @@ impl ZkMemoryDb {
 
     // the zktrie can be created only if the corresponding root node has been added
     pub fn new_trie(&mut self, root: &Hash) -> Option<ZkTrie> {
-        let ret = unsafe { NewZkTrie(root.as_ptr(), self.db.cast_const()) };
+        let ret = unsafe { NewZkTrie(root.as_ptr(), self.db) };
 
         if ret.is_null() {
             None
