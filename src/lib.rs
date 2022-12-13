@@ -295,8 +295,8 @@ impl ZkTrie {
 mod tests {
 
     use super::*;
-    use halo2_proofs::halo2curves::group::ff::PrimeField;
     use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::halo2curves::group::ff::PrimeField;
     use mpt_circuits::hash::Hashable;
 
     static FILED_ERROR_READ: &str = "invalid input field";
