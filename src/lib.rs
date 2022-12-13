@@ -295,8 +295,8 @@ impl ZkTrie {
 mod tests {
 
     use super::*;
-    use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::halo2curves::group::ff::PrimeField;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mpt_circuits::hash::Hashable;
 
     static FILED_ERROR_READ: &str = "invalid input field";
@@ -309,27 +309,33 @@ mod tests {
 
     extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8 {
         use std::slice;
-        let mut a = unsafe { slice::from_raw_parts(a, 32) };
-        let mut b = unsafe { slice::from_raw_parts(b, 32) };
-        let mut out = unsafe { slice::from_raw_parts_mut(out, 32) };
+        let a: [u8; 32] =
+            TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
+        let b: [u8; 32] =
+            TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
+        let out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
-        let fa = if let Ok(f) = Fr::read(&mut a) {
-            f
+        let fa = Fr::from_bytes(&a);
+        let fa = if fa.is_some().into() {
+            fa.unwrap()
         } else {
             return FILED_ERROR_READ.as_ptr().cast();
         };
-        let fb = if let Ok(f) = Fr::read(&mut b) {
-            f
+        let fb = Fr::from_bytes(&b);
+        let fb = if fb.is_some().into() {
+            fb.unwrap()
         } else {
             return FILED_ERROR_READ.as_ptr().cast();
         };
 
         let h = Fr::hash([fa, fb]);
 
-        if h.write(&mut out).is_err() {
-            FILED_ERROR_OUT.as_ptr().cast()
-        } else {
+        let repr_h = h.to_repr();
+        if repr_h.len() == 32 {
+            out.copy_from_slice(repr_h.as_ref());
             std::ptr::null()
+        } else {
+            FILED_ERROR_OUT.as_ptr().cast()
         }
     }
 
