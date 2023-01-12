@@ -104,6 +104,7 @@ func (mt *ZkTrieImpl) TryUpdate(kHash *zkt.Hash, vFlag uint32, vPreimage []zkt.B
 	path := getPath(mt.maxLevels, kHash[:])
 
 	// precalc Key of new leaf here
+
 	if _, err := newNodeLeaf.Key(); err != nil {
 		return err
 	}
@@ -124,6 +125,157 @@ func (mt *ZkTrieImpl) TryUpdate(kHash *zkt.Hash, vFlag uint32, vPreimage []zkt.B
 	return nil
 }
 
+func (mt *ZkTrieImpl) delAndUpdate(leaf *Node, path []bool, siblings []*Node) error {
+	leaf.Key()
+	//the trie has only one leaf and the root is this leaf, just set root to empty
+	if len(siblings) == 0 {
+		mt.rootKey = &zkt.HashZero
+		return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+	}
+	parent := siblings[len(siblings)-1]
+	var sib *Node
+	var err error
+	if bytes.Equal(parent.ChildL[:], leaf.key[:]) {
+		/*
+		  parent
+		  /   \
+		 D    sib
+		*/
+		parent.ChildL = &zkt.HashZero
+		parent.key = nil
+		sib, err = mt.GetNode(parent.ChildR)
+		if err != nil {
+			return err
+		}
+	} else {
+		/*
+		  parent
+		  /    \
+		 sib    D
+		*/
+		parent.ChildR = &zkt.HashZero
+		parent.key = nil
+		sib, err = mt.GetNode(parent.ChildL)
+		if err != nil {
+			return err
+		}
+	}
+	if sib.Type == NodeTypeLeaf {
+		if len(siblings) == 1 {
+			/*
+				 root    OR     root
+				 /  \           /  \
+				sib   D        D    sib
+			*/
+			mt.rootKey = sib.key
+			return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+		}
+
+		/*
+			should collapse
+			siblings=[root,B,P]
+			      root
+			    ┌--┴┐
+			    X   B
+			       ┌┴┐
+			       P
+			      ┌┴┐
+			      D sib(leaf)
+		*/
+		flag := false
+		for j := len(siblings) - 2; j >= 0; j-- {
+			top := siblings[j]
+			if !flag {
+				if path[j] {
+					if !bytes.Equal(top.ChildL[:], zkt.HashZero[:]) {
+						top.ChildR, err = sib.Key()
+						if err != nil {
+							return err
+						}
+						flag = true
+					}
+				} else {
+					if !bytes.Equal(top.ChildR[:], zkt.HashZero[:]) {
+						top.ChildL, err = sib.Key()
+						if err != nil {
+							return err
+						}
+						flag = true
+					}
+				}
+			} else {
+				siblings[j+1].key = nil // set to nil so method Key() will recalculate key
+				if path[j] {
+					siblings[j].ChildR, err = siblings[j+1].Key()
+				} else {
+					siblings[j].ChildL, err = siblings[j+1].Key()
+				}
+				if err != nil {
+					return err
+				}
+				mt.addNode(siblings[j+1])
+			}
+		}
+
+		if !flag {
+			mt.rootKey, err = sib.Key()
+		} else {
+			siblings[0].key = nil
+			mt.addNode(siblings[0])
+			mt.rootKey, err = siblings[0].Key()
+		}
+		if err != nil {
+			return err
+		}
+		return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+	}
+
+	//not leaf
+	/*
+		should not collapse
+		siblings=[root,B,P]
+			     root
+			   ┌--┴┐
+			   X   B
+			      ┌┴┐
+			      P
+			     ┌┴┐
+			     D sib(mid)
+	*/
+	if len(siblings) == 1 {
+		/*
+			 parent(root)
+			 /  \
+			D    mid
+		*/
+		parent.key = nil
+		mt.rootKey, err = parent.Key()
+		if err != nil {
+			return err
+		}
+		return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+	}
+	for j := len(siblings) - 2; j >= 0; j-- {
+		siblings[j+1].key = nil
+		if path[j] {
+			siblings[j].ChildR, err = siblings[j+1].Key()
+		} else {
+			siblings[j].ChildL, err = siblings[j+1].Key()
+		}
+		if err != nil {
+			return err
+		}
+		mt.addNode(siblings[j+1])
+	}
+	siblings[0].key = nil
+	mt.rootKey, err = siblings[0].Key()
+	if err != nil {
+		return err
+	}
+	mt.addNode(siblings[0])
+	return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+}
+
 func (mt *ZkTrieImpl) tryDeleteLite(kHash *zkt.Hash) error {
 	// verify that the ZkTrieImpl is writable
 	if !mt.writable {
@@ -138,7 +290,7 @@ func (mt *ZkTrieImpl) tryDeleteLite(kHash *zkt.Hash) error {
 	path := getPath(mt.maxLevels, kHash[:])
 
 	nextKey := mt.rootKey
-	siblings := []*zkt.Hash{}
+	siblings := []*Node{}
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(nextKey)
 		if err != nil {
@@ -150,22 +302,24 @@ func (mt *ZkTrieImpl) tryDeleteLite(kHash *zkt.Hash) error {
 		case NodeTypeLeaf:
 			if bytes.Equal(kHash[:], n.NodeKey[:]) {
 				// remove and go up with the sibling
-				newRootKey, err := mt.recalculatePathUntilRoot(path, NewNodeEmpty(), siblings)
-				if err != nil {
-					return err
-				}
-				mt.rootKey = newRootKey
-				return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
+				/*
+					newRootKey, err := mt.recalculatePathUntilRoot(path, NewNodeEmpty(), siblings)
+					if err != nil {
+						return err
+					}
+					mt.rootKey = newRootKey
+				*/
+				return mt.delAndUpdate(n, path, siblings)
 			}
 			return ErrKeyNotFound
 		case NodeTypeMiddle:
+			siblings = append(siblings, n)
 			if path[i] {
 				nextKey = n.ChildR
-				siblings = append(siblings, n.ChildL)
 			} else {
 				nextKey = n.ChildL
-				siblings = append(siblings, n.ChildR)
 			}
+
 		default:
 			return ErrInvalidNodeFound
 		}
