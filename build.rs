@@ -7,9 +7,9 @@ fn main() {
     let src_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let src_dir = Path::new(src_dir.as_str());
 
-    #[cfg(not(target_os = "windows"))]
-    let build_mode = gobuild::BuildMode::CArchive;
-    #[cfg(target_os = "windows")]
+    //#[cfg(not(target_os = "windows"))]
+    //let build_mode = gobuild::BuildMode::CArchive;
+    //#[cfg(target_os = "windows")]
     let build_mode = gobuild::BuildMode::CShared;
 
     // Build
