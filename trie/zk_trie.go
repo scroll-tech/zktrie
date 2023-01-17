@@ -110,7 +110,7 @@ func (t *ZkTrie) TryDelete(key []byte) error {
 		return nil
 	}
 
-	return t.tree.tryDeleteLite(kHash)
+	return t.tree.TryDelete(kHash)
 }
 
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the

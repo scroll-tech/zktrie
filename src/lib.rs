@@ -468,9 +468,6 @@ mod tests {
         assert_eq!(trie.root(), root);
 
         trie.delete(&acc_buf);
-        let root = hex::decode("1f914fa71145a8722aa0dcac0fc12b8bd7993f8fdb804e7180d359865407c7ae")
-            .unwrap();
-        let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
         let acc_buf = hex::decode("4cb1aB63aF5D8931Ce09673EbD8ae2ce16fD6571").unwrap();

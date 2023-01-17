@@ -124,56 +124,6 @@ func (mt *ZkTrieImpl) TryUpdate(kHash *zkt.Hash, vFlag uint32, vPreimage []zkt.B
 	return nil
 }
 
-func (mt *ZkTrieImpl) tryDeleteLite(kHash *zkt.Hash) error {
-	// verify that the ZkTrieImpl is writable
-	if !mt.writable {
-		return ErrNotWritable
-	}
-
-	// verify that k is valid and fit inside the Finite Field.
-	if !zkt.CheckBigIntInField(kHash.BigInt()) {
-		return ErrInvalidField
-	}
-
-	path := getPath(mt.maxLevels, kHash[:])
-
-	nextKey := mt.rootKey
-	siblings := []*zkt.Hash{}
-	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.GetNode(nextKey)
-		if err != nil {
-			return err
-		}
-		switch n.Type {
-		case NodeTypeEmpty:
-			return ErrKeyNotFound
-		case NodeTypeLeaf:
-			if bytes.Equal(kHash[:], n.NodeKey[:]) {
-				// remove and go up with the sibling
-				newRootKey, err := mt.recalculatePathUntilRoot(path, NewNodeEmpty(), siblings)
-				if err != nil {
-					return err
-				}
-				mt.rootKey = newRootKey
-				return mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
-			}
-			return ErrKeyNotFound
-		case NodeTypeMiddle:
-			if path[i] {
-				nextKey = n.ChildR
-				siblings = append(siblings, n.ChildL)
-			} else {
-				nextKey = n.ChildL
-				siblings = append(siblings, n.ChildR)
-			}
-		default:
-			return ErrInvalidNodeFound
-		}
-	}
-
-	return ErrKeyNotFound
-}
-
 // pushLeaf recursively pushes an existing oldLeaf down until its path diverges
 // from newLeaf, at which point both leafs are stored, all while updating the
 // path.
@@ -309,7 +259,7 @@ func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 	oldV, err := mt.db.Get(k[:])
 	if err == nil {
 		if !bytes.Equal(oldV, v) {
-			fmt.Printf("fail on conflicted key: %v, old value %x and new %x\n", k, oldV, v)
+			fmt.Printf("fail on conflicted key: %x, old value %x and new %x\n", k, oldV, v)
 			return nil, ErrNodeKeyAlreadyExists
 		} else {
 			// duplicated
@@ -446,25 +396,40 @@ func (mt *ZkTrieImpl) TryDelete(kHash *zkt.Hash) error {
 
 // rmAndUpload removes the key, and goes up until the root updating all the
 // nodes with the new values.
-func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.Hash) error {
-	if len(siblings) == 0 {
-		mt.rootKey = &zkt.HashZero
-		err := mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
-		if err != nil {
-			return err
+func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.Hash) (err error) {
+
+	var finalRoot *zkt.Hash
+	defer func() {
+		if err == nil {
+			if finalRoot == nil {
+				panic("finalRoot is not set yet")
+			}
+			mt.rootKey = finalRoot
+			err = mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
 		}
-		return nil
+	}()
+
+	if len(siblings) == 0 {
+		finalRoot = &zkt.HashZero
+		return
 	}
 
 	toUpload := siblings[len(siblings)-1]
 	if len(siblings) < 2 { //nolint:gomnd
-		mt.rootKey = siblings[0]
-		err := mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
-		if err != nil {
-			return err
-		}
-		return nil
+		finalRoot = siblings[0]
+		return
 	}
+	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
+		return getErr
+	} else {
+		if uploadNode.Type == NodeTypeMiddle {
+			// for middle node, simply recalc the path
+			finalRoot, err = mt.recalculatePathUntilRoot(path, NewNodeEmpty(),
+				siblings)
+			return
+		}
+	}
+
 	for i := len(siblings) - 2; i >= 0; i-- { //nolint:gomnd
 		if !bytes.Equal(siblings[i][:], zkt.HashZero[:]) {
 			var newNode *Node
@@ -473,35 +438,21 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.
 			} else {
 				newNode = NewNodeMiddle(toUpload, siblings[i])
 			}
-			_, err := mt.addNode(newNode)
+			_, err = mt.addNode(newNode)
 			if err != ErrNodeKeyAlreadyExists && err != nil {
 				return err
 			}
 			// go up until the root
-			newRootKey, err := mt.recalculatePathUntilRoot(path, newNode,
+			finalRoot, err = mt.recalculatePathUntilRoot(path, newNode,
 				siblings[:i])
-			if err != nil {
-				return err
-			}
-			mt.rootKey = newRootKey
-			err = mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
-			if err != nil {
-				return err
-			}
-			break
-		}
-		// if i==0 (root position), stop and store the sibling of the
-		// deleted leaf as root
-		if i == 0 {
-			mt.rootKey = toUpload
-			err := mt.dbInsert(dbKeyRootNode, DBEntryTypeRoot, mt.rootKey[:])
-			if err != nil {
-				return err
-			}
-			break
+			return
 		}
 	}
-	return nil
+
+	// if all sibling is zero, stop and store the sibling of the
+	// deleted leaf as root
+	finalRoot = toUpload
+	return
 }
 
 // recalculatePathUntilRoot recalculates the nodes until the Root
