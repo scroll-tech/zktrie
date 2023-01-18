@@ -409,25 +409,25 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.
 		}
 	}()
 
+	// if we have no siblings, it mean the target node is the only node in trie
 	if len(siblings) == 0 {
 		finalRoot = &zkt.HashZero
 		return
 	}
 
 	toUpload := siblings[len(siblings)-1]
+	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
+		return getErr
+	} else if uploadNode.Type == NodeTypeMiddle {
+		// for middle node, simply recalc the path
+		finalRoot, err = mt.recalculatePathUntilRoot(path, NewNodeEmpty(),
+			siblings)
+		return
+	}
+
 	if len(siblings) < 2 { //nolint:gomnd
 		finalRoot = siblings[0]
 		return
-	}
-	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
-		return getErr
-	} else {
-		if uploadNode.Type == NodeTypeMiddle {
-			// for middle node, simply recalc the path
-			finalRoot, err = mt.recalculatePathUntilRoot(path, NewNodeEmpty(),
-				siblings)
-			return
-		}
 	}
 
 	for i := len(siblings) - 2; i >= 0; i-- { //nolint:gomnd

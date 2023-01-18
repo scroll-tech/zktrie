@@ -204,4 +204,14 @@ func TestMerkleTree_Deletion2(t *testing.T) {
 	assert.Nil(t, err)
 	assertKeyDepth(key1, 8)
 	assert.Equal(t, rootPhase2, mt.Root().Bytes())
+
+	key4 := zkt.NewByte32FromBytes([]byte{4}) //0b100, so it is 2 level node (fail before d1c735)
+	err = mt.AddWord(key4, &zkt.Byte32{4})
+	assert.Nil(t, err)
+
+	assertKeyDepth(key4, 2)
+
+	err = mt.DeleteWord(key4)
+	assert.Nil(t, err)
+	assert.Equal(t, rootPhase2, mt.Root().Bytes())
 }
