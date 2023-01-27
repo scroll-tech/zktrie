@@ -53,7 +53,7 @@ extern "C" {
         key_sz: c_int,
         cb: ProveCallback,
         param: *mut c_void,
-    );
+    ) -> *const c_char;
     fn NewTrieNode(data: *const u8, data_sz: c_int) -> *const TrieNode;
     fn FreeTrieNode(node: *const TrieNode);
     fn TrieNodeKey(node: *const TrieNode) -> *const u8;
@@ -231,21 +231,24 @@ impl ZkTrie {
     }
 
     // build prove array for mpt path
-    pub fn prove(&self, key: &[u8]) -> Vec<Vec<u8>> {
+    pub fn prove(&self, key: &[u8]) -> Result<Vec<Vec<u8>>, ErrString> {
         let mut output: Vec<Vec<u8>> = Vec::new();
         let ptr: *mut Vec<Vec<u8>> = &mut output;
 
-        unsafe {
+        let ret_ptr = unsafe {
             TrieProve(
                 self.trie,
                 key.as_ptr(),
                 key.len() as c_int,
                 Self::prove_callback,
                 ptr.cast(),
-            );
+            )
+        };
+        if ret_ptr.is_null() {
+            Ok(output)
+        } else {
+            Err(ret_ptr.into())
         }
-
-        output
     }
 
     fn update<const T: usize>(&mut self, key: &[u8], value: &[u8; T]) -> Result<(), ErrString> {
@@ -471,7 +474,7 @@ mod tests {
         assert_eq!(trie.root(), root);
 
         let acc_buf = hex::decode("4cb1aB63aF5D8931Ce09673EbD8ae2ce16fD6571").unwrap();
-        let proof = trie.prove(&acc_buf);
+        let proof = trie.prove(&acc_buf).unwrap();
 
         assert_eq!(proof.len(), 10);
         assert_eq!(proof[9], hex::decode("5448495320495320534f4d45204d4147494320425954455320464f5220534d54206d3172525867503278704449").unwrap());
