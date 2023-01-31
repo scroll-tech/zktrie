@@ -19,7 +19,7 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 		return HashElems(baseH, elems[0])
 	}
 
-	tmp := make([]*big.Int, l/2)
+	tmp := make([]*big.Int, (l+1)/2)
 	for i := range tmp {
 		if (i+1)*2 > l {
 			tmp[i] = elems[i*2+1]
