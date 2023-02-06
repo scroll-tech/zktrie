@@ -44,7 +44,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 		case NodeTypeLeaf:
 			// notice even we found a leaf whose entry didn't match the expected k,
 			// we still include it as the proof of absence
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			finished = false
 			if path[i] {
 				tn = n.ChildR

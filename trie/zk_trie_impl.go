@@ -100,15 +100,15 @@ func (mt *ZkTrieImpl) TryUpdate(kHash *zkt.Hash, vFlag uint32, vPreimage []zkt.B
 		return ErrInvalidField
 	}
 
-	newNodeLeaf := NewNodeLeaf(kHash, vFlag, vPreimage)
+	newLeafNode := NewLeafNode(kHash, vFlag, vPreimage)
 	path := getPath(mt.maxLevels, kHash[:])
 
 	// precalc Key of new leaf here
-	if _, err := newNodeLeaf.Key(); err != nil {
+	if _, err := newLeafNode.Key(); err != nil {
 		return err
 	}
 
-	newRootKey, err := mt.addLeaf(newNodeLeaf, mt.rootKey, 0, path, true)
+	newRootKey, err := mt.addLeaf(newLeafNode, mt.rootKey, 0, path, true)
 	// sanity check
 	if err == ErrEntryIndexAlreadyExists {
 		panic("Encounter unexpected errortype: ErrEntryIndexAlreadyExists")
@@ -132,18 +132,18 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	if lvl > mt.maxLevels-2 {
 		return nil, ErrReachedMaxLevel
 	}
-	var newNodeMiddle *Node
+	var newParentNode *Node
 	if pathNewLeaf[lvl] == pathOldLeaf[lvl] { // We need to go deeper!
 		nextKey, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
 		if err != nil {
 			return nil, err
 		}
 		if pathNewLeaf[lvl] { // go right
-			newNodeMiddle = NewNodeMiddle(&zkt.HashZero, nextKey)
+			newParentNode = NewParentNode(&zkt.HashZero, nextKey)
 		} else { // go left
-			newNodeMiddle = NewNodeMiddle(nextKey, &zkt.HashZero)
+			newParentNode = NewParentNode(nextKey, &zkt.HashZero)
 		}
-		return mt.addNode(newNodeMiddle)
+		return mt.addNode(newParentNode)
 	}
 	oldLeafKey, err := oldLeaf.Key()
 	if err != nil {
@@ -155,9 +155,9 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	}
 
 	if pathNewLeaf[lvl] {
-		newNodeMiddle = NewNodeMiddle(oldLeafKey, newLeafKey)
+		newParentNode = NewParentNode(oldLeafKey, newLeafKey)
 	} else {
-		newNodeMiddle = NewNodeMiddle(newLeafKey, oldLeafKey)
+		newParentNode = NewParentNode(newLeafKey, oldLeafKey)
 	}
 	// We can add newLeaf now.  We don't need to add oldLeaf because it's
 	// already in the tree.
@@ -165,7 +165,7 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	if err != nil {
 		return nil, err
 	}
-	return mt.addNode(newNodeMiddle)
+	return mt.addNode(newParentNode)
 }
 
 // addLeaf recursively adds a newLeaf in the MT while updating the path.
@@ -218,23 +218,23 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, key *zkt.Hash,
 		// We need to push newLeaf down until its path diverges from
 		// n's path
 		return mt.pushLeaf(newLeaf, n, lvl, path, pathOldLeaf)
-	case NodeTypeMiddle:
+	case NodeTypeParent:
 		// We need to go deeper, continue traversing the tree, left or
 		// right depending on path
-		var newNodeMiddle *Node
+		var newParentNode *Node
 		if path[lvl] { // go right
 			nextKey, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
-			newNodeMiddle = NewNodeMiddle(n.ChildL, nextKey)
+			newParentNode = NewParentNode(n.ChildL, nextKey)
 		} else { // go left
 			nextKey, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
-			newNodeMiddle = NewNodeMiddle(nextKey, n.ChildR)
+			newParentNode = NewParentNode(nextKey, n.ChildR)
 		}
 		if err != nil {
 			fmt.Printf("addLeaf:GetNode err %v level %v\n", err, lvl)
 			return nil, err
 		}
 		// Update the node to reflect the modified child
-		return mt.addNode(newNodeMiddle)
+		return mt.addNode(newParentNode)
 	default:
 		return nil, ErrInvalidNodeFound
 	}
@@ -301,13 +301,13 @@ func (mt *ZkTrieImpl) tryGet(kHash *zkt.Hash) (*Node, []*zkt.Hash, error) {
 		}
 		switch n.Type {
 		case NodeTypeEmpty:
-			return NewNodeEmpty(), siblings, ErrKeyNotFound
+			return NewEmptyNode(), siblings, ErrKeyNotFound
 		case NodeTypeLeaf:
 			if bytes.Equal(kHash[:], n.NodeKey[:]) {
 				return n, siblings, nil
 			}
 			return n, siblings, ErrKeyNotFound
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			if path[i] {
 				nextKey = n.ChildR
 				siblings = append(siblings, n.ChildL)
@@ -378,7 +378,7 @@ func (mt *ZkTrieImpl) TryDelete(kHash *zkt.Hash) error {
 				return err
 			}
 			return ErrKeyNotFound
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			if path[i] {
 				nextKey = n.ChildR
 				siblings = append(siblings, n.ChildL)
@@ -418,9 +418,9 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.
 	toUpload := siblings[len(siblings)-1]
 	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
 		return getErr
-	} else if uploadNode.Type == NodeTypeMiddle {
-		// for middle node, simply recalc the path
-		finalRoot, err = mt.recalculatePathUntilRoot(path, NewNodeEmpty(),
+	} else if uploadNode.Type == NodeTypeParent {
+		// for parent node, simply recalc the path
+		finalRoot, err = mt.recalculatePathUntilRoot(path, NewEmptyNode(),
 			siblings)
 		return
 	}
@@ -434,9 +434,9 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, kHash *zkt.Hash, siblings []*zkt.
 		if !bytes.Equal(siblings[i][:], zkt.HashZero[:]) {
 			var newNode *Node
 			if path[i] {
-				newNode = NewNodeMiddle(siblings[i], toUpload)
+				newNode = NewParentNode(siblings[i], toUpload)
 			} else {
-				newNode = NewNodeMiddle(toUpload, siblings[i])
+				newNode = NewParentNode(toUpload, siblings[i])
 			}
 			_, err = mt.addNode(newNode)
 			if err != ErrNodeKeyAlreadyExists && err != nil {
@@ -464,9 +464,9 @@ func (mt *ZkTrieImpl) recalculatePathUntilRoot(path []bool, node *Node,
 			return nil, err
 		}
 		if path[i] {
-			node = NewNodeMiddle(siblings[i], nodeKey)
+			node = NewParentNode(siblings[i], nodeKey)
 		} else {
-			node = NewNodeMiddle(nodeKey, siblings[i])
+			node = NewParentNode(nodeKey, siblings[i])
 		}
 		_, err = mt.addNode(node)
 		if err != ErrNodeKeyAlreadyExists && err != nil {
@@ -495,14 +495,14 @@ func (mt *ZkTrieImpl) GetLeafNode(key *zkt.Hash) (*Node, error) {
 
 // GetNode gets a node by key from the MT.  Empty nodes are not stored in the
 // tree; they are all the same and assumed to always exist.
-// <del>for non exist key, return (NewNodeEmpty(), nil)</del>
+// <del>for non exist key, return (NewEmptyNode(), nil)</del>
 func (mt *ZkTrieImpl) GetNode(key *zkt.Hash) (*Node, error) {
 	if bytes.Equal(key[:], zkt.HashZero[:]) {
-		return NewNodeEmpty(), nil
+		return NewEmptyNode(), nil
 	}
 	nBytes, err := mt.db.Get(key[:])
 	if err == ErrKeyNotFound {
-		//return NewNodeEmpty(), nil
+		//return NewEmptyNode(), nil
 		return nil, ErrKeyNotFound
 	} else if err != nil {
 		return nil, err
@@ -569,7 +569,7 @@ func BuildZkTrieProof(rootKey *zkt.Hash, k *big.Int, lvl int, getNode func(key *
 			// We found a leaf whose entry didn't match hIndex
 			p.NodeAux = &NodeAux{Key: n.NodeKey, Value: n.valueHash}
 			return p, n, nil
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			if path[p.depth] {
 				nextKey = n.ChildR
 				siblingKey = n.ChildL
@@ -645,12 +645,12 @@ func (proof *Proof) rootFromProof(key, kHash *zkt.Hash) (*zkt.Hash, error) {
 			siblingKey = &zkt.HashZero
 		}
 		if path[lvl] {
-			midKey, err = NewNodeMiddle(siblingKey, midKey).Key()
+			midKey, err = NewParentNode(siblingKey, midKey).Key()
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			midKey, err = NewNodeMiddle(midKey, siblingKey).Key()
+			midKey, err = NewParentNode(midKey, siblingKey).Key()
 			if err != nil {
 				return nil, err
 			}
@@ -670,7 +670,7 @@ func (mt *ZkTrieImpl) walk(key *zkt.Hash, f func(*Node)) error {
 		f(n)
 	case NodeTypeLeaf:
 		f(n)
-	case NodeTypeMiddle:
+	case NodeTypeParent:
 		f(n)
 		if err := mt.walk(n.ChildL, f); err != nil {
 			return err
@@ -714,7 +714,7 @@ node [fontname=Monospace,fontsize=10,shape=box]
 		case NodeTypeEmpty:
 		case NodeTypeLeaf:
 			fmt.Fprintf(w, "\"%v\" [style=filled];\n", k.String())
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			lr := [2]string{n.ChildL.String(), n.ChildR.String()}
 			emptyNodes := ""
 			for i := range lr {

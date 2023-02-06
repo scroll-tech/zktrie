@@ -41,7 +41,7 @@ type ZkTrie struct {
 // underlying diskdb
 func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
 
-	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), 256)
+	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), 128)
 	if err != nil {
 		return nil, err
 	}

@@ -14,8 +14,8 @@ import (
 type NodeType byte
 
 const (
-	// NodeTypeMiddle indicates the type of middle Node that has children.
-	NodeTypeMiddle NodeType = 0
+	// NodeTypeParent indicates the type of parent Node that has children.
+	NodeTypeParent NodeType = 0
 	// NodeTypeLeaf indicates the type of a leaf Node that contains a key &
 	// value.
 	NodeTypeLeaf NodeType = 1
@@ -32,9 +32,9 @@ const (
 type Node struct {
 	// Type is the type of node in the tree.
 	Type NodeType
-	// ChildL is the left child of a middle node.
+	// ChildL is the left child of a parent node.
 	ChildL *zkt.Hash
-	// ChildR is the right child of a middle node.
+	// ChildR is the right child of a parent node.
 	ChildR *zkt.Hash
 	// NodeKey is the node's key stored in a leaf node.
 	NodeKey *zkt.Hash
@@ -52,18 +52,18 @@ type Node struct {
 	KeyPreimage *zkt.Byte32
 }
 
-// NewNodeLeaf creates a new leaf node.
-func NewNodeLeaf(k *zkt.Hash, valueFlags uint32, valuePreimage []zkt.Byte32) *Node {
+// NewLeafNode creates a new leaf node.
+func NewLeafNode(k *zkt.Hash, valueFlags uint32, valuePreimage []zkt.Byte32) *Node {
 	return &Node{Type: NodeTypeLeaf, NodeKey: k, CompressedFlags: valueFlags, ValuePreimage: valuePreimage}
 }
 
-// NewNodeMiddle creates a new middle node.
-func NewNodeMiddle(childL *zkt.Hash, childR *zkt.Hash) *Node {
-	return &Node{Type: NodeTypeMiddle, ChildL: childL, ChildR: childR}
+// NewParentNode creates a new parent node.
+func NewParentNode(childL *zkt.Hash, childR *zkt.Hash) *Node {
+	return &Node{Type: NodeTypeParent, ChildL: childL, ChildR: childR}
 }
 
-// NewNodeEmpty creates a new empty node.
-func NewNodeEmpty() *Node {
+// NewEmptyNode creates a new empty node.
+func NewEmptyNode() *Node {
 	return &Node{Type: NodeTypeEmpty}
 }
 
@@ -75,7 +75,7 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 	n := Node{Type: NodeType(b[0])}
 	b = b[1:]
 	switch n.Type {
-	case NodeTypeMiddle:
+	case NodeTypeParent:
 		if len(b) != 2*zkt.ElemBytesLen {
 			return nil, ErrNodeBytesBadSize
 		}
@@ -122,7 +122,7 @@ func (n *Node) Key() (*zkt.Hash, error) {
 	if n.key == nil { // Cache the key to avoid repeated hash computations.
 		// NOTE: We are not using the type to calculate the hash!
 		switch n.Type {
-		case NodeTypeMiddle: // H(ChildL || ChildR)
+		case NodeTypeParent: // H(ChildL || ChildR)
 			var err error
 			n.key, err = zkt.HashElems(n.ChildL.BigInt(), n.ChildR.BigInt())
 			if err != nil {
@@ -178,7 +178,7 @@ func (n *Node) Data() []byte {
 // stored in backend storage
 func (n *Node) CanonicalValue() []byte {
 	switch n.Type {
-	case NodeTypeMiddle: // {Type || ChildL || ChildR}
+	case NodeTypeParent: // {Type || ChildL || ChildR}
 		bytes := []byte{byte(n.Type)}
 		bytes = append(bytes, n.ChildL.Bytes()...)
 		bytes = append(bytes, n.ChildR.Bytes()...)
@@ -219,8 +219,8 @@ func (n *Node) Value() []byte {
 // String outputs a string representation of a node (different for each type).
 func (n *Node) String() string {
 	switch n.Type {
-	case NodeTypeMiddle: // {Type || ChildL || ChildR}
-		return fmt.Sprintf("Middle L:%s R:%s", n.ChildL, n.ChildR)
+	case NodeTypeParent: // {Type || ChildL || ChildR}
+		return fmt.Sprintf("Parent L:%s R:%s", n.ChildL, n.ChildR)
 	case NodeTypeLeaf: // {Type || Data...}
 		return fmt.Sprintf("Leaf I:%v Items: %d, First:%v", n.NodeKey, len(n.ValuePreimage), n.ValuePreimage[0])
 	case NodeTypeEmpty: // {}

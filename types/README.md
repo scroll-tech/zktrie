@@ -1,4 +1,4 @@
-# Type for zktrie 
+# Type for zktrie
 
 ## Data Format in stateDb
 
@@ -9,11 +9,11 @@ All data node being stored via stateDb are encoded by following syntax:
 
     magic string     =  "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI" ;
 
-    node data        =  middle node | leaf node | empty node ;
+    node data        =  parent node | leaf node | empty node ;
 
     empty node       = '0x2' ;
 
-    middle node      = '0x0', left hash, right hash ;
+    parent node      = '0x0', left hash, right hash ;
 
     field            = 32 * hex char ;
 
@@ -40,7 +40,7 @@ All data node being stored via stateDb are encoded by following syntax:
     len              = byte ;
 ```
 
-A `field` is an element in prime field of BN256 represented by **big endian** integer and contained in fixed length (32) bytes; 
+A `field` is an element in prime field of BN256 represented by **big endian** integer and contained in fixed length (32) bytes;
 
 A `compressed field` is a field represented by **big endian** integer which could be contained in 16 bytes;
 
@@ -50,7 +50,7 @@ For the total `value len` items of `value field` (maximum 255), the first 24 `va
 
 The key of data node is obtained from one or more poseidon hash calculation: `poseidon := (field, field) => field`.
 
-For middle node:
+For parent node:
 
 ```
 key = poseidon(<left hash>, <right hash>)
@@ -136,7 +136,7 @@ key = poseidon(layer1[0], layer1[1])
 
 Notice all field and compressed field are represented as **big endian** integer.
 
-### A middle node in account trie:
+### A parent node in account trie:
 
 > 0x00000000000000000000000000000000000000000000000000000000000000000004470b58d80eeb26da85b2c2db5c254900656fb459c07729f556ff02534ab32a
 
