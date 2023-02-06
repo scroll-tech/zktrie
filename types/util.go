@@ -97,7 +97,7 @@ func ToSecureKey(key []byte) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Use the lower 128-bit value of the hash as the key
+	// Use the low 128-bit value of the hash as the key
 	bytes := NewByte32FromBytes(hash.Bytes())
 	return new(big.Int).SetBytes(bytes[16:]), nil
 }
