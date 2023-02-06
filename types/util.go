@@ -22,7 +22,7 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 	tmp := make([]*big.Int, (l+1)/2)
 	for i := range tmp {
 		if (i+1)*2 > l {
-			tmp[i] = elems[i*2+1]
+			tmp[i] = elems[i*2]
 		} else {
 			h, err := hashScheme(elems[i*2 : (i+1)*2])
 			if err != nil {
