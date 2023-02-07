@@ -80,7 +80,7 @@ func NewTrieNode(data *C.char, sz C.int) C.uintptr_t {
 	}
 
 	// calculate key for caching
-	if _, err := n.Key(); err != nil {
+	if _, err := n.NodeHash(); err != nil {
 		return 0
 	}
 
@@ -88,13 +88,13 @@ func NewTrieNode(data *C.char, sz C.int) C.uintptr_t {
 }
 
 // obtain the key hash, must be free by caller
-//export TrieNodeKey
-func TrieNodeKey(pN C.uintptr_t) unsafe.Pointer {
+//export TrieNodeHash
+func TrieNodeHash(pN C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(pN)
 	n := h.Value().(*trie.Node)
 
-	k, _ := n.Key()
-	return C.CBytes(k.Bytes())
+	hash, _ := n.NodeHash()
+	return C.CBytes(hash.Bytes())
 }
 
 // obtain the value hash for leaf node (must be free by caller), or nil for other
@@ -107,8 +107,8 @@ func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
 		return nil
 	}
 
-	k, _ := n.ValueKey()
-	return C.CBytes(k.Bytes())
+	valueHash, _ := n.ValueHash()
+	return C.CBytes(valueHash.Bytes())
 }
 
 // free created trie node
@@ -159,11 +159,11 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 		return nil
 	}
 
-	k, err := n.Key()
+	hash, err := n.NodeHash()
 	if err != nil {
 		return C.CString(err.Error())
 	}
-	db.Init(k[:], n.CanonicalValue())
+	db.Init(hash[:], n.CanonicalValue())
 
 	return nil
 

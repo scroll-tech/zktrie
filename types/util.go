@@ -97,19 +97,26 @@ func ToSecureKey(key []byte) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Use the low 128-bit value of the hash as the key
+	// Use the low `NodeKeyByteLen` bytes of the hash as the key
 	bytes := NewByte32FromBytes(hash.Bytes())
-	return new(big.Int).SetBytes(bytes[16:]), nil
+	return new(big.Int).SetBytes(bytes[32-NodeKeyByteLen:]), nil
 }
 
 // ToSecureKeyBytes turn the byte key into a 32-byte "secured" key, which represented a big-endian integer
 func ToSecureKeyBytes(key []byte) (*Byte32, error) {
-
 	k, err := ToSecureKey(key)
 	if err != nil {
 		return nil, err
 	}
 
 	return NewByte32FromBytes(k.Bytes()), nil
+}
 
+// ReverseByteOrder swaps the order of the bytes in the slice.
+func ReverseByteOrder(b []byte) []byte {
+	o := make([]byte, len(b))
+	for i := range b {
+		o[len(b)-1-i] = b[i]
+	}
+	return o
 }

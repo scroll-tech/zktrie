@@ -44,11 +44,11 @@ type Node struct {
 	ValuePreimage []zkt.Byte32
 	// CompressedFlags use each bit for indicating the compressed flag for the first 24 fields
 	CompressedFlags uint32
-	// key is the cache of entry key used to avoid recalculating
-	key *zkt.Hash
-	// valueHash is the cache of hashes of valuePreimage, used to avoid recalculating
+	// nodeHash is the cache of the hash of the node to avoid recalculating
+	nodeHash *zkt.Hash
+	// valueHash is the cache of the hash of valuePreimage to avoid recalculating, only valid for leaf node
 	valueHash *zkt.Hash
-	// KeyPreimage is kept here only for proof
+	// KeyPreimage is the original key value that derives the NodeKey, kept here only for proof
 	KeyPreimage *zkt.Byte32
 }
 
@@ -76,28 +76,34 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 	b = b[1:]
 	switch n.Type {
 	case NodeTypeParent:
-		if len(b) != 2*zkt.ElemBytesLen {
+		if len(b) != 2*zkt.HashByteLen {
 			return nil, ErrNodeBytesBadSize
 		}
-		n.ChildL = zkt.NewHashFromBytes(b[:zkt.ElemBytesLen])
-		n.ChildR = zkt.NewHashFromBytes(b[zkt.ElemBytesLen : zkt.ElemBytesLen*2])
+		n.ChildL = zkt.NewHashFromBytes(b[:zkt.HashByteLen])
+		n.ChildR = zkt.NewHashFromBytes(b[zkt.HashByteLen : zkt.HashByteLen*2])
 	case NodeTypeLeaf:
-		if len(b) < zkt.ElemBytesLen+4 {
+		if len(b) < zkt.HashByteLen+4 {
 			return nil, ErrNodeBytesBadSize
 		}
-		n.NodeKey = zkt.NewHashFromBytes(b[0:32])
-		mark := binary.LittleEndian.Uint32(b[32:36])
+		n.NodeKey = zkt.NewHashFromBytes(b[0:zkt.HashByteLen])
+		mark := binary.LittleEndian.Uint32(b[zkt.HashByteLen : zkt.HashByteLen+4])
 		preimageLen := int(mark & 255)
 		n.CompressedFlags = mark >> 8
 		n.ValuePreimage = make([]zkt.Byte32, preimageLen)
-		curPos := 36
+		curPos := zkt.HashByteLen + 4
+		if len(b) < curPos+preimageLen*32+1 {
+			return nil, ErrNodeBytesBadSize
+		}
 		for i := 0; i < preimageLen; i++ {
 			copy(n.ValuePreimage[i][:], b[i*32+curPos:(i+1)*32+curPos])
 		}
-		curPos = 36 + preimageLen*32
+		curPos += preimageLen * 32
 		preImageSize := int(b[curPos])
 		curPos += 1
 		if preImageSize != 0 {
+			if len(b) < curPos+preImageSize {
+				return nil, ErrNodeBytesBadSize
+			}
 			n.KeyPreimage = new(zkt.Byte32)
 			copy(n.KeyPreimage[:], b[curPos:curPos+preImageSize])
 		}
@@ -109,22 +115,22 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 	return &n, nil
 }
 
-// LeafKey computes the key of a leaf node given the hIndex and hValue of the
+// LeafHash computes the key of a leaf node given the hIndex and hValue of the
 // entry of the leaf.
-func LeafKey(k, v *zkt.Hash) (*zkt.Hash, error) {
+func LeafHash(k, v *zkt.Hash) (*zkt.Hash, error) {
 	return zkt.HashElems(big.NewInt(1), k.BigInt(), v.BigInt())
 }
 
-// Key computes the key of the node by hashing the content in a specific way
-// for each type of node.  This key is used as the hash of the merklee tree for
-// each node.
-func (n *Node) Key() (*zkt.Hash, error) {
-	if n.key == nil { // Cache the key to avoid repeated hash computations.
+// NodeHash computes the hash digest of the node by hashing the content in a
+// specific way for each type of node.  This key is used as the hash of the
+// Merkle tree for each node.
+func (n *Node) NodeHash() (*zkt.Hash, error) {
+	if n.nodeHash == nil { // Cache the key to avoid repeated hash computations.
 		// NOTE: We are not using the type to calculate the hash!
 		switch n.Type {
 		case NodeTypeParent: // H(ChildL || ChildR)
 			var err error
-			n.key, err = zkt.HashElems(n.ChildL.BigInt(), n.ChildR.BigInt())
+			n.nodeHash, err = zkt.HashElems(n.ChildL.BigInt(), n.ChildR.BigInt())
 			if err != nil {
 				return nil, err
 			}
@@ -135,22 +141,27 @@ func (n *Node) Key() (*zkt.Hash, error) {
 				return nil, err
 			}
 
-			n.key, err = LeafKey(n.NodeKey, n.valueHash)
+			n.nodeHash, err = LeafHash(n.NodeKey, n.valueHash)
 			if err != nil {
 				return nil, err
 			}
 
 		case NodeTypeEmpty: // Zero
-			n.key = &zkt.HashZero
+			n.nodeHash = &zkt.HashZero
 		default:
-			n.key = &zkt.HashZero
+			n.nodeHash = &zkt.HashZero
 		}
 	}
-	return n.key, nil
+	return n.nodeHash, nil
 }
 
-func (n *Node) ValueKey() (*zkt.Hash, error) {
-	if _, err := n.Key(); err != nil {
+// ValueHash computes the hash digest of the value stored in the leaf node. For
+// other node types, it returns the zero hash.
+func (n *Node) ValueHash() (*zkt.Hash, error) {
+	if n.Type != NodeTypeLeaf {
+		return &zkt.HashZero, nil
+	}
+	if _, err := n.NodeHash(); err != nil {
 		return nil, err
 	}
 	return n.valueHash, nil
