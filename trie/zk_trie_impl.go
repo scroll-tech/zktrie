@@ -134,14 +134,14 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	}
 	var newParentNode *Node
 	if pathNewLeaf[lvl] == pathOldLeaf[lvl] { // We need to go deeper!
-		nextKey, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
+		nextNodeHash, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
 		if err != nil {
 			return nil, err
 		}
 		if pathNewLeaf[lvl] { // go right
-			newParentNode = NewParentNode(&zkt.HashZero, nextKey)
+			newParentNode = NewParentNode(&zkt.HashZero, nextNodeHash)
 		} else { // go left
-			newParentNode = NewParentNode(nextKey, &zkt.HashZero)
+			newParentNode = NewParentNode(nextNodeHash, &zkt.HashZero)
 		}
 		return mt.addNode(newParentNode)
 	}
@@ -170,16 +170,15 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 
 // addLeaf recursively adds a newLeaf in the MT while updating the path, and returns the node hash
 // of the new added leaf.
-func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, key *zkt.Hash,
+func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 	lvl int, path []bool, forceUpdate bool) (*zkt.Hash, error) {
 	var err error
-	var nextKey *zkt.Hash
 	if lvl > mt.maxLevels-1 {
 		return nil, ErrReachedMaxLevel
 	}
-	n, err := mt.GetNode(key)
+	n, err := mt.GetNode(currNodeHash)
 	if err != nil {
-		fmt.Printf("addLeaf:GetNode err %v key %v root %v level %v\n", err, key, mt.rootHash, lvl)
+		fmt.Printf("addLeaf: GetNode err %v node hash %v root %v level %v\n", err, currNodeHash, mt.rootHash, lvl)
 		fmt.Printf("root %v\n", mt.Root())
 		return nil, err
 	}
@@ -210,7 +209,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, key *zkt.Hash,
 				return mt.updateNode(newLeaf)
 			}
 
-			fmt.Printf("ErrEntryIndexAlreadyExists nodeKey %v n.Key() %v newLeaf.Key() %v\n",
+			fmt.Printf("ErrEntryIndexAlreadyExists nodeKey %v n.Nodehash() %v newLeaf.Key() %v\n",
 				n.NodeKey, hash, newLeaf.nodeHash)
 			return nil, ErrEntryIndexAlreadyExists
 
@@ -223,12 +222,13 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, key *zkt.Hash,
 		// We need to go deeper, continue traversing the tree, left or
 		// right depending on path
 		var newParentNode *Node
+		var newNodeHash *zkt.Hash
 		if path[lvl] { // go right
-			nextKey, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
-			newParentNode = NewParentNode(n.ChildL, nextKey)
+			newNodeHash, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
+			newParentNode = NewParentNode(n.ChildL, newNodeHash)
 		} else { // go left
-			nextKey, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
-			newParentNode = NewParentNode(nextKey, n.ChildR)
+			newNodeHash, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
+			newParentNode = NewParentNode(newNodeHash, n.ChildR)
 		}
 		if err != nil {
 			fmt.Printf("addLeaf: GetNode err %v level %v\n", err, lvl)
@@ -241,8 +241,8 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, key *zkt.Hash,
 	}
 }
 
-// addNode adds a node into the MT.  Empty nodes are not stored in the tree;
-// they are all the same and assumed to always exist.
+// addNode adds a node into the MT and returns the node hash. Empty nodes are
+// not stored in the tree since they are all the same and assumed to always exist.
 func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 	// verify that the ZkTrieImpl is writable
 	if !mt.writable {
@@ -489,21 +489,20 @@ func (mt *ZkTrieImpl) dbInsert(k []byte, t NodeType, data []byte) error {
 
 // GetLeafNode is more underlying method than TryGet, which obtain an leaf node
 // or nil if not exist
-func (mt *ZkTrieImpl) GetLeafNode(key *zkt.Hash) (*Node, error) {
-	n, _, err := mt.tryGet(key)
+func (mt *ZkTrieImpl) GetLeafNode(nodeKey *zkt.Hash) (*Node, error) {
+	n, _, err := mt.tryGet(nodeKey)
 	return n, err
 }
 
-// GetNode gets a node by key from the MT.  Empty nodes are not stored in the
+// GetNode gets a node by node hash from the MT.  Empty nodes are not stored in the
 // tree; they are all the same and assumed to always exist.
 // <del>for non exist key, return (NewEmptyNode(), nil)</del>
-func (mt *ZkTrieImpl) GetNode(key *zkt.Hash) (*Node, error) {
-	if bytes.Equal(key[:], zkt.HashZero[:]) {
+func (mt *ZkTrieImpl) GetNode(nodeHash *zkt.Hash) (*Node, error) {
+	if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
 		return NewEmptyNode(), nil
 	}
-	nBytes, err := mt.db.Get(key[:])
+	nBytes, err := mt.db.Get(nodeHash[:])
 	if err == ErrKeyNotFound {
-		//return NewEmptyNode(), nil
 		return nil, ErrKeyNotFound
 	} else if err != nil {
 		return nil, err
@@ -522,8 +521,8 @@ func getPath(numLevels int, k []byte) []bool {
 
 // NodeAux contains the auxiliary node used in a non-existence proof.
 type NodeAux struct {
-	Key   *zkt.Hash
-	Value *zkt.Hash
+	Key   *zkt.Hash // Key is the node key
+	Value *zkt.Hash // Value is the value hash in the node
 }
 
 // Proof defines the required elements for a MT proof of existence or
@@ -536,10 +535,10 @@ type Proof struct {
 	depth uint
 	// notempties is a bitmap of non-empty Siblings found in Siblings.
 	notempties [zkt.HashByteLen - proofFlagsLen]byte
-	// Siblings is a list of non-empty sibling keys.
+	// Siblings is a list of non-empty sibling node hashes.
 	Siblings []*zkt.Hash
-	// Key is the key of leaf in existence case
-	Key     *zkt.Hash
+	// NodeAux contains the auxiliary information of the lowest common ancestor
+	// node in a non-existence proof.
 	NodeAux *NodeAux
 }
 
@@ -658,8 +657,8 @@ func (proof *Proof) rootFromProof(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error
 }
 
 // walk is a helper recursive function to iterate over all tree branches
-func (mt *ZkTrieImpl) walk(key *zkt.Hash, f func(*Node)) error {
-	n, err := mt.GetNode(key)
+func (mt *ZkTrieImpl) walk(nodeHash *zkt.Hash, f func(*Node)) error {
+	n, err := mt.GetNode(nodeHash)
 	if err != nil {
 		return err
 	}

@@ -32,9 +32,9 @@ const (
 type Node struct {
 	// Type is the type of node in the tree.
 	Type NodeType
-	// ChildL is the left child of a parent node.
+	// ChildL is the node hash of the left child of a parent node.
 	ChildL *zkt.Hash
-	// ChildR is the right child of a parent node.
+	// ChildR is the node hash of the right child of a parent node.
 	ChildR *zkt.Hash
 	// NodeKey is the node's key stored in a leaf node.
 	NodeKey *zkt.Hash

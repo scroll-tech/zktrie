@@ -42,9 +42,6 @@ const numCharPrint = 8
 // HashByteLen is the length of the Hash byte array
 const HashByteLen = 32
 
-// NodeKeyByteLen is the number of bytes in the node key
-const NodeKeyByteLen = 31
-
 var HashZero = Hash{}
 
 // Hash is the generic type to store the hash in the MerkleTree, encoded in little endian

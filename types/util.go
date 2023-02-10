@@ -93,13 +93,7 @@ func BigEndianBitsToBigInt(bits []bool) *big.Int {
 // ToSecureKey turn the byte key into the integer represent of "secured" key
 func ToSecureKey(key []byte) (*big.Int, error) {
 	word := NewByte32FromBytesPaddingZero(key)
-	hash, err := word.Hash()
-	if err != nil {
-		return nil, err
-	}
-	// Use the low `NodeKeyByteLen` bytes of the hash as the key
-	bytes := NewByte32FromBytes(hash.Bytes())
-	return new(big.Int).SetBytes(bytes[32-NodeKeyByteLen:]), nil
+	return word.Hash()
 }
 
 // ToSecureKeyBytes turn the byte key into a 32-byte "secured" key, which represented a big-endian integer

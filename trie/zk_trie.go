@@ -36,11 +36,20 @@ type ZkTrie struct {
 	tree *ZkTrieImpl
 }
 
+// NodeKeyValidBytes is the number of least significant bytes in the node key
+// that are considered valid, and thus, limits the trie depth to be
+// NodeKeyValidBytes * 8.
+// We need to truncate the node key because the key is the output of the
+// Poseidon hash and the space doesn't fully occupy the range of power of two.
+// It can lead to an ambiguous bit representation of the key and thus cause
+// a soundness issue in the circuit.
+const NodeKeyValidBytes = 31
+
 // NewSecure creates a trie
 // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
 // underlying diskdb
 func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
-	maxLevels := zkt.NodeKeyByteLen * 8
+	maxLevels := NodeKeyValidBytes * 8
 	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), maxLevels)
 	if err != nil {
 		return nil, err
