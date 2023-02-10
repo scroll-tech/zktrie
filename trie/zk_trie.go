@@ -37,12 +37,12 @@ type ZkTrie struct {
 }
 
 // NodeKeyValidBytes is the number of least significant bytes in the node key
-// that are considered valid, and thus, limits the trie depth to be
-// NodeKeyValidBytes * 8.
-// We need to truncate the node key because the key is the output of the
-// Poseidon hash and the space doesn't fully occupy the range of power of two.
-// It can lead to an ambiguous bit representation of the key and thus cause
-// a soundness issue in the circuit.
+// that are considered valid to addressing the leaf node, and thus limits the
+// maximum trie depth to NodeKeyValidBytes * 8.
+// We need to truncate the node key because the key is the output of Poseidon
+// hash and the key space doesn't fully occupy the range of power of two. It can
+// lead to an ambiguous bit representation of the key in the finite field
+// causing a soundness issue in the zk circuit.
 const NodeKeyValidBytes = 31
 
 // NewSecure creates a trie
