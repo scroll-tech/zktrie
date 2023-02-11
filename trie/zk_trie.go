@@ -36,12 +36,21 @@ type ZkTrie struct {
 	tree *ZkTrieImpl
 }
 
+// NodeKeyValidBytes is the number of least significant bytes in the node key
+// that are considered valid to addressing the leaf node, and thus limits the
+// maximum trie depth to NodeKeyValidBytes * 8.
+// We need to truncate the node key because the key is the output of Poseidon
+// hash and the key space doesn't fully occupy the range of power of two. It can
+// lead to an ambiguous bit representation of the key in the finite field
+// causing a soundness issue in the zk circuit.
+const NodeKeyValidBytes = 31
+
 // NewSecure creates a trie
 // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
 // underlying diskdb
 func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
-
-	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), 256)
+	maxLevels := NodeKeyValidBytes * 8
+	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), maxLevels)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +125,12 @@ func (t *ZkTrie) TryDelete(key []byte) error {
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the
 // database and can be used even if the trie doesn't have one.
 func (t *ZkTrie) Hash() []byte {
-	return t.tree.rootKey.Bytes()
+	return t.tree.rootHash.Bytes()
 }
 
 // Copy returns a copy of SecureBinaryTrie.
 func (t *ZkTrie) Copy() *ZkTrie {
-	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootKey, t.tree.maxLevels)
+	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootHash, t.tree.maxLevels)
 	if err != nil {
 		panic("clone trie failed")
 	}

@@ -56,7 +56,7 @@ extern "C" {
     ) -> *const c_char;
     fn NewTrieNode(data: *const u8, data_sz: c_int) -> *const TrieNode;
     fn FreeTrieNode(node: *const TrieNode);
-    fn TrieNodeKey(node: *const TrieNode) -> *const u8;
+    fn TrieNodeHash(node: *const TrieNode) -> *const u8;
     fn TrieLeafNodeValueHash(node: *const TrieNode) -> *const u8;
 }
 
@@ -133,8 +133,8 @@ impl ZkTrieNode {
         }
     }
 
-    pub fn key(&self) -> Hash {
-        must_get_hash(unsafe { TrieNodeKey(self.trie_node) })
+    pub fn node_hash(&self) -> Hash {
+        must_get_hash(unsafe { TrieNodeHash(self.trie_node) })
     }
 
     pub fn value_hash(&self) -> Option<Hash> {
@@ -395,12 +395,12 @@ mod tests {
         init_hash_scheme(hash_scheme);
         let nd = ZkTrieNode::parse(&hex::decode("012098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864010100000000000000000000000000000000000000000000000000000000018282256f8b00").unwrap());
         assert_eq!(
-            hex::encode(nd.key()),
+            hex::encode(nd.node_hash()),
             "058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c"
         );
         let nd = ZkTrieNode::parse(&hex::decode("0107061006b64441e81799d7fd6751ae26fed5347d31c0bb04d6b11052c9a6f7e1040400000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000029b74e075daad9f17eb39cd893c2dd32f52ecd99084d63964842defd00ebcbe2058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c00").unwrap());
         assert_eq!(
-            hex::encode(nd.key()),
+            hex::encode(nd.node_hash()),
             "2ed8f76e353a8fb28bf175f3e1cddc697407fd7c98632ce8642ca249964aabf1"
         );
     }
@@ -482,7 +482,7 @@ mod tests {
 
         let node = ZkTrieNode::parse(&proof[8]);
         assert_eq!(
-            node.key().as_slice(),
+            node.node_hash().as_slice(),
             hex::decode("03913cd940cf5cf31a07b9b87d04d92eff246f76ab76d6a08806b1516d956973")
                 .unwrap()
         );

@@ -31,7 +31,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 
 	path := getPath(mt.maxLevels, kHash[:])
 	var nodes []*Node
-	tn := mt.rootKey
+	tn := mt.rootHash
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(tn)
 		if err != nil {
@@ -44,7 +44,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 		case NodeTypeLeaf:
 			// notice even we found a leaf whose entry didn't match the expected k,
 			// we still include it as the proof of absence
-		case NodeTypeMiddle:
+		case NodeTypeParent:
 			finished = false
 			if path[i] {
 				tn = n.ChildR

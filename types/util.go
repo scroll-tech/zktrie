@@ -92,19 +92,25 @@ func BigEndianBitsToBigInt(bits []bool) *big.Int {
 
 // ToSecureKey turn the byte key into the integer represent of "secured" key
 func ToSecureKey(key []byte) (*big.Int, error) {
-
 	word := NewByte32FromBytesPaddingZero(key)
 	return word.Hash()
 }
 
 // ToSecureKeyBytes turn the byte key into a 32-byte "secured" key, which represented a big-endian integer
 func ToSecureKeyBytes(key []byte) (*Byte32, error) {
-
 	k, err := ToSecureKey(key)
 	if err != nil {
 		return nil, err
 	}
 
 	return NewByte32FromBytes(k.Bytes()), nil
+}
 
+// ReverseByteOrder swaps the order of the bytes in the slice.
+func ReverseByteOrder(b []byte) []byte {
+	o := make([]byte, len(b))
+	for i := range b {
+		o[len(b)-1-i] = b[i]
+	}
+	return o
 }
