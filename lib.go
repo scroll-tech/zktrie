@@ -185,7 +185,8 @@ func NewZkTrie(root_c *C.uchar, pDb C.uintptr_t) C.uintptr_t {
 }
 
 // currently it is caller's responsibility to distinguish what
-// the returned buffer is byte32 or encoded account data (4x32bytes fields)
+// the returned buffer is byte32 or encoded account data (4x32bytes fields for original account
+// or 6x32bytes fields for 'dual-codehash' extended account)
 //export TrieGet
 func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 	h := cgo.Handle(p)
@@ -197,7 +198,7 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 		return nil
 	}
 	//sanity check
-	if val_sz := len(v); val_sz != 32 && val_sz != 32*4 {
+	if val_sz := len(v); val_sz != 32 && val_sz != 32*4 && val_sz != 32*6 {
 		// unexpected val size which is to be recognized by caller, so just filter it
 		return nil
 	}
@@ -209,12 +210,14 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 //export TrieUpdate
 func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val_sz C.int) *C.char {
 
-	if val_sz != 32 && val_sz != 128 {
+	if val_sz != 32 && val_sz != 128 && val_sz != 192 {
 		return C.CString("unexpected buffer type")
 	}
 
 	var vFlag uint32
-	if val_sz == 128 {
+	if val_sz == 192 {
+		vFlag = 8
+	} else if val_sz == 128 {
 		vFlag = 4
 	} else {
 		vFlag = 1

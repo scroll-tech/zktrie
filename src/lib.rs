@@ -20,7 +20,11 @@ struct TrieNode {
 
 pub const HASHLEN: usize = 32;
 pub const FIELDSIZE: usize = 32;
+#[cfg(not(feature = "dual_codehash"))]
 pub const ACCOUNTFIELDS: usize = 4;
+#[cfg(feature = "dual_codehash")]
+pub const ACCOUNTFIELDS: usize = 6;
+pub const ACCOUNTSIZE: usize = FIELDSIZE * ACCOUNTFIELDS;
 pub type Hash = [u8; HASHLEN];
 pub type StoreData = [u8; FIELDSIZE];
 pub type AccountData = [[u8; FIELDSIZE]; ACCOUNTFIELDS];
@@ -225,7 +229,7 @@ impl ZkTrie {
 
     // get account data from account trie
     pub fn get_account(&self, key: &[u8]) -> Option<AccountData> {
-        self.get::<128>(key).map(|arr| unsafe {
+        self.get::<ACCOUNTSIZE>(key).map(|arr| unsafe {
             std::mem::transmute::<[u8; FIELDSIZE * ACCOUNTFIELDS], AccountData>(arr)
         })
     }
@@ -300,7 +304,7 @@ mod tests {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::halo2curves::group::ff::PrimeField;
-    use mpt_circuits::hash::Hashable;
+    use poseidon_circuit::Hashable;
 
     static FILED_ERROR_READ: &str = "invalid input field";
     static FILED_ERROR_OUT: &str = "output field fail";
@@ -393,18 +397,27 @@ mod tests {
     #[test]
     fn node_parse() {
         init_hash_scheme(hash_scheme);
-        let nd = ZkTrieNode::parse(&hex::decode("012098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864010100000000000000000000000000000000000000000000000000000000018282256f8b00").unwrap());
-        assert_eq!(
-            hex::encode(nd.node_hash()),
-            "058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c"
-        );
-        let nd = ZkTrieNode::parse(&hex::decode("0107061006b64441e81799d7fd6751ae26fed5347d31c0bb04d6b11052c9a6f7e1040400000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000029b74e075daad9f17eb39cd893c2dd32f52ecd99084d63964842defd00ebcbe2058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c00").unwrap());
-        assert_eq!(
-            hex::encode(nd.node_hash()),
-            "2ed8f76e353a8fb28bf175f3e1cddc697407fd7c98632ce8642ca249964aabf1"
-        );
+        if cfg!(feature = "dual_codehash") {
+            let nd = ZkTrieNode::parse(&hex::decode("0127ce13c1a0ce0ffdfee073c169086db54ffc0c5f2fb424d158f761ca952f100c0508000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000d5fffb0000000000000000000000000000000000000000000000000000000000000000c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4702098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864200000000000000000000000000000000000000003000000000000000000000000").unwrap());
+            assert_eq!(
+                hex::encode(nd.node_hash()),
+                "2b3e52421f5792e4820a4606fa47b3b4c0d62ccc6eb8cc96bfbeec7ed601f247"
+            );
+        } else {
+            let nd = ZkTrieNode::parse(&hex::decode("012098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864010100000000000000000000000000000000000000000000000000000000018282256f8b00").unwrap());
+            assert_eq!(
+                hex::encode(nd.node_hash()),
+                "058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c"
+            );
+            let nd = ZkTrieNode::parse(&hex::decode("0107061006b64441e81799d7fd6751ae26fed5347d31c0bb04d6b11052c9a6f7e1040400000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000029b74e075daad9f17eb39cd893c2dd32f52ecd99084d63964842defd00ebcbe2058c7a163389dea56e5efe3b57428428831a3aecfe0ed6a3f885c37bc8563b1c00").unwrap());
+            assert_eq!(
+                hex::encode(nd.node_hash()),
+                "2ed8f76e353a8fb28bf175f3e1cddc697407fd7c98632ce8642ca249964aabf1"
+            );
+        }
     }
 
+    #[cfg(not(feature = "dual_codehash"))]
     #[test]
     fn trie_works() {
         init_hash_scheme(hash_scheme);

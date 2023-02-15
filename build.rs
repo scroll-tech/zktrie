@@ -18,7 +18,7 @@ fn main() {
         .try_compile(lib_name)
     {
         // The error type is private so have to check the error string
-        if format!("{}", e).starts_with("Failed to find tool.") {
+        if format!("{e}").starts_with("Failed to find tool.") {
             fail(
                 " Failed to find Go. Please install Go 1.16 or later \
                 following the instructions at https://golang.org/doc/install.
@@ -26,7 +26,7 @@ fn main() {
                     .to_string(),
             );
         } else {
-            fail(format!("{}", e));
+            fail(format!("{e}"));
         }
     }
 
@@ -41,8 +41,7 @@ fn main() {
 fn fail(message: String) {
     let _ = writeln!(
         io::stderr(),
-        "\n\nError while building zktrie: {}\n\n",
-        message
+        "\n\nError while building zktrie: {message}\n\n",
     );
     std::process::exit(1);
 }
