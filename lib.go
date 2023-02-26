@@ -210,7 +210,7 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 //export TrieUpdate
 func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val_sz C.int) *C.char {
 
-	if val_sz != 32 && val_sz != 128 && val_sz != 192 {
+	if val_sz != 32 && val_sz != 128 && val_sz != 160 {
 		return C.CString("unexpected buffer type")
 	}
 
