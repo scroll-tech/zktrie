@@ -198,7 +198,7 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 		return nil
 	}
 	//sanity check
-	if val_sz := len(v); val_sz != 32 && val_sz != 32*4 && val_sz != 32*6 {
+	if val_sz := len(v); val_sz != 32 && val_sz != 32*4 && val_sz != 32*5 {
 		// unexpected val size which is to be recognized by caller, so just filter it
 		return nil
 	}
@@ -215,7 +215,7 @@ func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val
 	}
 
 	var vFlag uint32
-	if val_sz == 192 {
+	if val_sz == 160 {
 		vFlag = 8
 	} else if val_sz == 128 {
 		vFlag = 4

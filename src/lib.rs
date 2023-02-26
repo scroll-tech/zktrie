@@ -23,7 +23,7 @@ pub const FIELDSIZE: usize = 32;
 #[cfg(not(feature = "dual_codehash"))]
 pub const ACCOUNTFIELDS: usize = 4;
 #[cfg(feature = "dual_codehash")]
-pub const ACCOUNTFIELDS: usize = 6;
+pub const ACCOUNTFIELDS: usize = 5;
 pub const ACCOUNTSIZE: usize = FIELDSIZE * ACCOUNTFIELDS;
 pub type Hash = [u8; HASHLEN];
 pub type StoreData = [u8; FIELDSIZE];
@@ -354,6 +354,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     static EXAMPLE : [&str;37] = [
             "0x00206372de1e9b006b4104d57ee366871a32eed87731d7e6bcb2b84c605784ba072a84f0cee483739d84d15ba1b0f131900a20b41bc3b52e1b11af816095d49e34",
             "0x0007e14b4527ba2121b4c7b7256a6b0aa6bcedfe0b6f503cea362ea9ddd9f967b92b42961b4531b48a39e50771bff69e37850a57fb7d62604208a6a17f5c045069",
