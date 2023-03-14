@@ -178,8 +178,8 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 	}
 	n, err := mt.GetNode(currNodeHash)
 	if err != nil {
-		fmt.Printf("addLeaf: GetNode err %v node hash %v root %v level %v\n", err, currNodeHash, mt.rootHash, lvl)
-		fmt.Printf("root %v\n", mt.Root())
+		//fmt.Printf("addLeaf: GetNode err %v node hash %v root %v level %v\n", err, currNodeHash, mt.rootHash, lvl)
+		//fmt.Printf("root %v\n", mt.Root())
 		return nil, err
 	}
 	switch n.Type {
@@ -188,7 +188,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 		{
 			r, e := mt.addNode(newLeaf)
 			if e != nil {
-				fmt.Println("err on NodeTypeEmpty mt.addNode ", e)
+				//fmt.Println("err on NodeTypeEmpty mt.addNode ", e)
 			}
 			return r, e
 		}
@@ -198,7 +198,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 		if bytes.Equal(n.NodeKey[:], newLeaf.NodeKey[:]) {
 			hash, err := n.NodeHash()
 			if err != nil {
-				fmt.Println("err on obtain key of duplicated entry", err)
+				//fmt.Println("err on obtain key of duplicated entry", err)
 				return nil, err
 			}
 			if bytes.Equal(hash[:], newLeaf.nodeHash[:]) {
@@ -209,8 +209,8 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 				return mt.updateNode(newLeaf)
 			}
 
-			fmt.Printf("ErrEntryIndexAlreadyExists nodeKey %v n.Nodehash() %v newLeaf.Key() %v\n",
-				n.NodeKey, hash, newLeaf.nodeHash)
+			//fmt.Printf("ErrEntryIndexAlreadyExists nodeKey %v n.Nodehash() %v newLeaf.Key() %v\n",
+			//	n.NodeKey, hash, newLeaf.nodeHash)
 			return nil, ErrEntryIndexAlreadyExists
 
 		}
@@ -231,7 +231,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 			newParentNode = NewParentNode(newNodeHash, n.ChildR)
 		}
 		if err != nil {
-			fmt.Printf("addLeaf: GetNode err %v level %v\n", err, lvl)
+			//fmt.Printf("addLeaf: GetNode err %v level %v\n", err, lvl)
 			return nil, err
 		}
 		// Update the node to reflect the modified child
@@ -260,7 +260,7 @@ func (mt *ZkTrieImpl) addNode(n *Node) (*zkt.Hash, error) {
 	oldV, err := mt.db.Get(hash[:])
 	if err == nil {
 		if !bytes.Equal(oldV, v) {
-			fmt.Printf("Encounter conflicted node hash: %x, old value %x and new %x\n", hash, oldV, v)
+			//fmt.Printf("Encounter conflicted node hash: %x, old value %x and new %x\n", hash, oldV, v)
 			return nil, ErrNodeKeyAlreadyExists
 		} else {
 			// duplicated
