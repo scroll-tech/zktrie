@@ -328,7 +328,7 @@ mod tests {
             return FILED_ERROR_READ.as_ptr().cast();
         };
 
-        let h = Fr::hash([fa, fb]);
+        let h = <Fr as Hashable>::hash([fa, fb]);
 
         let repr_h = h.to_repr();
         if repr_h.len() == 32 {
