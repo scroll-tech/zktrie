@@ -4,8 +4,9 @@ import (
 	"math/big"
 	"testing"
 
-	zkt "github.com/scroll-tech/zktrie/types"
 	"github.com/stretchr/testify/assert"
+
+	zkt "github.com/scroll-tech/zktrie/types"
 )
 
 var lcEff *big.Int
