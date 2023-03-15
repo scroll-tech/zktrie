@@ -484,8 +484,9 @@ mod tests {
         let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
-        trie.delete(&acc_buf);
-        assert_eq!(trie.root(), root);
+        //TOD: current the EXAMPLE do not include deletion proof
+        //trie.delete(&acc_buf);
+        //assert_eq!(trie.get_account(&acc_buf), None);
 
         let acc_buf = hex::decode("4cb1aB63aF5D8931Ce09673EbD8ae2ce16fD6571").unwrap();
         let proof = trie.prove(&acc_buf).unwrap();
