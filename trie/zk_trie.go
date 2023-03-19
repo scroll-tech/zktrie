@@ -201,12 +201,11 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 					sibling = prev.ChildL
 				}
 
-				var siblingNode *Node
-				siblingNode, err = t.tree.GetNode(sibling)
-				if err != nil {
-					return
+				if siblingNode, err := t.tree.GetNode(sibling); err == nil {
+					onHit(n, siblingNode)
+				} else {
+					onHit(n, nil)
 				}
-				onHit(n, siblingNode)
 			}
 
 		}
