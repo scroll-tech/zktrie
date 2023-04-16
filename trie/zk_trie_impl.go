@@ -420,8 +420,8 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, nodeKey *zkt.Hash, siblings []*zk
 	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
 		// fail fast here
 		err = getErr
-		panic(fmt.Errorf("can not get deletion proof for %s, %v", toUpload.Hex(), getErr))
-		// return getErr
+		// panic(fmt.Errorf("can not get deletion proof for %s, %v", toUpload.Hex(), getErr))
+		return err
 	} else if uploadNode.Type == NodeTypeParent {
 		// for parent node, simply recalc the path
 		finalRoot, err = mt.recalculatePathUntilRoot(path, NewEmptyNode(),
