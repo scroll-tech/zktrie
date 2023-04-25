@@ -21,7 +21,7 @@ In zkTrie, we use Poseidon hash to compute the node hash because it's more frien
 
 ## 2. Tree Construction
 
-Given a key-value pair, we first compute a *secure key* for the corresponding leaf node by hashing the original key (i.e., account address and storage key) using the Poseidon hash function. This can make the key uniformly distributed over the key space. The node key hashing method is described the [Node Hashing](#leaf-node) section below.
+Given a key-value pair, we first compute a *secure key* for the corresponding leaf node by hashing the original key (i.e., account address and storage key) using the Poseidon hash function. This can make the key uniformly distributed over the key space. The node key hashing method is described the [Node Hashing](#3-node-hashing) section below.
 
 We then encode the path of a new leaf node by traversing the secure key from Least Significant Bit (LSB) to the Most Significant Bit (MSB). At each step, if the bit is 0, we will traverse to the left child; otherwise, traverse to the right child.
 
