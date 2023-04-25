@@ -2,6 +2,7 @@
 
 Wrap the zktrie go module in [l2geth](http://github.com/scroll-tech/go-ethereum) for rust
 
+
 ## Usage
 
 We must init the crate with a poseidon hash scheme before any actions:
@@ -59,6 +60,7 @@ trie.update_account(&acc_buf, &newacc).unwrap();
 
 The root and mpt path for an address can be query from trie by `ZkTrie::root` and `ZkTrie::prove`
 
+
 ## Installation
 
 Add `Cargo.toml` under `[dependencies]`:
@@ -68,12 +70,17 @@ Add `Cargo.toml` under `[dependencies]`:
 zktrie = { git = "https://https://github.com/scroll-tech/zktrie.git" }
 ```
 
+
+## Documentation
+
+See the technical [docs here](docs/zktrie.md).
+
+
 ## License
 
 Licensed under either of
 
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License (http://opensource.org/licenses/MIT)
 
-at your option.
-
+at your discretion.
