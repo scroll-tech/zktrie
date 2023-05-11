@@ -21,13 +21,13 @@ In zkTrie, we use Poseidon hash to compute the node hash because it's more frien
 
 ## 2. Tree Construction
 
-Given a key-value pair, we first compute a *secure key* for the corresponding leaf node by hashing the original key (i.e., account address and storage key) using the Poseidon hash function. This can make the key uniformly distributed over the key space. The node key hashing method is described the [Node Hashing](#3-node-hashing) section below.
+Given a key-value pair, we first compute a *secure key* for the corresponding leaf node by hashing the original key (i.e., account address and storage key) using the Poseidon hash function. This can make the key uniformly distributed over the key space. The node key hashing method is described in the [Node Hashing](#3-node-hashing) section below.
 
 We then encode the path of a new leaf node by traversing the secure key from Least Significant Bit (LSB) to the Most Significant Bit (MSB). At each step, if the bit is 0, we will traverse to the left child; otherwise, traverse to the right child.
 
-We limit the maximum depth of zkTrie to 248, meaning that the tree will only traverse the lower 248 bits of the key. This is because the secure key space is a finite field used by Poseidon hash that doesn't occupy the full range of power of 2. This leads to an ambiguous bit representation of the key in a finite field and thus causes a soundness issue in the zk circuit. But if we truncate the key to lower 248 bits, the key space can fully occupy the range of $2^248$ and won't have the ambiguity in the bit representation
+We limit the maximum depth of zkTrie to 248, meaning that the tree will only traverse the lower 248 bits of the key. This is because the secure key space is a finite field used by Poseidon hash that doesn't occupy the full range of power of 2. This leads to an ambiguous bit representation of the key in a finite field and thus causes a soundness issue in the zk circuit. But if we truncate the key to lower 248 bits, the key space can fully occupy the range of $2^{248}$ and won't have the ambiguity in the bit representation.
 
-We also apply an optimization to reduce the tree depth by contracting a subtree that has only one leaf node to a single leaf node. For example, in the Figure 1, the tree has three nodes in total, with key `0100`, `0010`, and `1010`. Because there is only one node that has key with suffix `00`, the leaf node for key `0100` only traveres the suffix `00` and doesn't fully expand its key which would have resulted in depth of 4.
+We also apply an optimization to reduce the tree depth by contracting a subtree that has only one leaf node to a single leaf node. For example, in the Figure 1, the tree has three nodes in total, with keys `0100`, `0010`, and `1010`. Because there is only one node that has key with suffix `00`, the leaf node for key `0100` only traverses the suffix `00` and doesn't fully expand its key which would have resulted in depth of 4.
 
 ## 3. Node Hashing
 
@@ -92,7 +92,7 @@ Before computing the value hash, the state account is first marshaled into a lis
 (total 160 bytes)
 ```
 
-The marshal function also returns a `flag` value along with a vector of `u256` values. The `flag` is a bitmap that indicates whether a `u256` value CANNOT be treated as a field element (Fr). The `flag` value for state account is 8, showed below.
+The marshal function also returns a `flag` value along with a vector of `u256` values. The `flag` is a bitmap that indicates whether a `u256` value CANNOT be treated as a field element (Fr). The `flag` value for state account is 8, shown below.
 
 ```
 +--------------------+---------+------+----------+----------+
@@ -107,11 +107,11 @@ The marshal function also returns a `flag` value along with a vector of `u256` v
 
 The value hash is computed in two steps:
 1. Convert the value that cannot be represented as a field element of the Poseidon hash to the field element.
-2. Combine field elements in a binary tree structure till the tree root that is treated as the value hash.
+2. Combine field elements in a binary tree structure till the tree root is treated as the value hash.
 
 In the first step, when the bit in the `flag` is 1 indicating the `u256` value that cannot be treated as a field element, we split the value into a high-128bit value and a low-128bit value, and then pass them to a Poseidon hash to derive a field element value, `h(valueHi, valueLo)`.
 
-Based on the the definition, the value hash of the state account is computed as follows.
+Based on the definition, the value hash of the state account is computed as follows.
 
 ```
 valueHash =
@@ -168,7 +168,7 @@ valueHash = h(storageValue[0:16], storageValue[16:32])
 When we insert a new leaf node to the existing zkTrie, there could be two cases illustrated in the Figure 2.
 
 1. When traversing the path of the node key, it reaches an empty node (Figure 2(b)). In this case, we just need to replace this empty node by this leaf node and backtrace the path to update the merkle hash of parent nodes till the root.
-2. When traversing the path of the node key, it reaches another leaf node `b` (Figure 2(c)). In this case, we need to push down the existing leaf node `b` until the next bit in the node keys of two leaf nodes differ. At each push-down step, we need to insert an empty sibling node when necessary. When we reaches the level that the bits differ, we then place two leaf nodes `b` and `c` as the left child and the right child depending on their bits. At last, we backtrace the path and update the merkle hash of all parent nodes.
+2. When traversing the path of the node key, it reaches another leaf node `b` (Figure 2(c)). In this case, we need to push down the existing leaf node `b` until the next bit in the node keys of two leaf nodes differs. At each push-down step, we need to insert an empty sibling node when necessary. When we reach the level where the bits differ, we then place two leaf nodes `b` and `c` as the left child and the right child depending on their bits. At last, we backtrace the path and update the merkle hash of all parent nodes.
 
 ### 4.2 Deletion
 
@@ -180,7 +180,7 @@ When we insert a new leaf node to the existing zkTrie, there could be two cases 
 
 The deletion of a leaf node is similar to the insertion. There are two cases illustrated in the Figure 3.
 
-1. The sibling node of to-be-deleted leaf node is a parent node (Figure 2(b)). In this case, we can just replace the node `a` by an empty node and update the node hash of its ancestors till the root node.
-2. The node of to-be-deleted leaf node is a leaf node (Figure 2(c)). Similarly, we first replace the leaf node by an empty node and start to contract its sibling node upwards until its sibling node is not an empty node. For example, in Figure 2(c), we first replace the leaf node `b` by an empty node. During the contraction, since the sibling of node `c` now becomes an empty node, we move node `c` one level upward to replace its parent node. The new sibling of node `c`, node `e`, is still an empty node. So again we move node `c` upward. Now that the sibling of node `c` is node `a`, the deletion process is finished.
+1. The sibling node of to-be-deleted leaf node is a parent node (Figure 3(b)). In this case, we can just replace the node `a` by an empty node and update the node hash of its ancestors till the root node.
+2. The node of to-be-deleted leaf node is a leaf node (Figure 3(c)). Similarly, we first replace the leaf node by an empty node and start to contract its sibling node upwards until its sibling node is not an empty node. For example, in Figure 3(c), we first replace the leaf node `b` by an empty node. During the contraction, since the sibling of node `c` now becomes an empty node, we move node `c` one level upward to replace its parent node. The new sibling of node `c`, node `e`, is still an empty node. So again we move node `c` upward. Now that the sibling of node `c` is node `a`, the deletion process is finished.
 
 Note that the sibling of a leaf node in a valid zkTrie cannot be an empty node. Otherwise, we should always prune the subtree and move the leaf node upwards.
