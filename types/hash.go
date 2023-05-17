@@ -75,9 +75,6 @@ func (h Hash) Hex() string {
 
 // BigInt returns the *big.Int representation of the *Hash
 func (h *Hash) BigInt() *big.Int {
-	if new(big.Int).SetBytes(ReverseByteOrder(h[:])) == nil {
-		return big.NewInt(0)
-	}
 	return new(big.Int).SetBytes(ReverseByteOrder(h[:]))
 }
 
