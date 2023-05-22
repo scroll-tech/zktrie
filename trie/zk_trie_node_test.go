@@ -46,17 +46,17 @@ func TestNewParentNode(t *testing.T) {
 
 func TestNewParentNodeWithEmptyChild(t *testing.T) {
 	l := zkt.NewHashFromBytes([]byte{1, 2, 3, 4, 5})
-	r := NewEmptyNode().nodeHash
+	r, err := NewEmptyNode().NodeHash()
+	assert.NoError(t, err)
 	node := NewParentNode(l, r)
 
 	assert.Equal(t, NodeTypeParent, node.Type)
 	assert.Equal(t, l, node.ChildL)
 	assert.Equal(t, r, node.ChildR)
 
-	// Will crush: node.ChildR is nil
-	// hash, err := node.NodeHash()
-	// assert.NoError(t, err)
-	// assert.Equal(t, "expected hash", hash.Hex())
+	hash, err := node.NodeHash()
+	assert.NoError(t, err)
+	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000e85bb078", hash.Hex())
 }
 
 func TestNewNodeFromBytes(t *testing.T) {
