@@ -27,7 +27,7 @@ func init() {
 	InitHashScheme(testHash)
 }
 
-func TestNewByte32FromBytesAndPaddingZero(t *testing.T) {
+func TestNewByte32(t *testing.T) {
 	var tests = []struct {
 		input               []byte
 		expected            []byte
