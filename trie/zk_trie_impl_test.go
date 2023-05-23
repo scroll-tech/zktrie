@@ -2,6 +2,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -11,22 +12,22 @@ import (
 )
 
 func init() {
-	var lcEff *big.Int
-	var prime = int64(5915587277)
-
-	testHash := func(arr []*big.Int) (*big.Int, error) {
+	zkt.InitHashScheme(func(arr []*big.Int) (*big.Int, error) {
+		lcEff := big.NewInt(65536)
+		qString := "21888242871839275222246405745257275088548364400416034343698204186575808495617"
+		Q, ok := new(big.Int).SetString(qString, 10)
+		if !ok {
+			panic(fmt.Sprintf("Bad base 10 string %s", qString))
+		}
 		sum := big.NewInt(0)
 		for _, bi := range arr {
-			nbi := big.NewInt(0).Mul(bi, bi)
+			nbi := new(big.Int).Mul(bi, bi)
 			sum = sum.Mul(sum, sum)
 			sum = sum.Mul(sum, lcEff)
 			sum = sum.Add(sum, nbi)
 		}
-		return sum.Mod(sum, big.NewInt(prime)), nil
-	}
-
-	lcEff = big.NewInt(65536)
-	zkt.InitHashScheme(testHash)
+		return sum.Mod(sum, Q), nil
+	})
 }
 
 // we do not need zktrie impl anymore, only made a wrapper for adapting testing
@@ -111,7 +112,7 @@ func TestMerkleTree_Init(t *testing.T) {
 		mt2, err := NewZkTrieImplWithRoot(db, mt.Root(), maxLevels)
 		assert.NoError(t, err)
 		assert.Equal(t, maxLevels, mt2.maxLevels)
-		assert.Equal(t, "000000000000000000000000000000000000000000000000000000001888b158", mt2.Root().Hex())
+		assert.Equal(t, "2120d2ba46996633e29ae090371f704ae8a1fac40c782030824e93af0540e663", mt2.Root().Hex())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node does not exist", func(t *testing.T) {
@@ -574,6 +575,6 @@ func TestMerkleTree_GraphViz(t *testing.T) {
 
 	err = mt.GraphViz(&buffer, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, "--------\nGraphViz of the ZkTrieImpl with RootHash 5523853076\ndigraph hierarchy {\nnode [fontname=Monospace,fontsize=10,shape=box]\n\"55238530...\" -> {\"empty0\" \"35303925...\"}\n\"empty0\" [style=dashed,label=0];\n\"35303925...\" -> {\"41161148...\" \"16255856...\"}\n\"41161148...\" [style=filled];\n\"16255856...\" [style=filled];\n}\nEnd of GraphViz of the ZkTrieImpl with RootHash 5523853076\n--------\n", buffer.String())
+	assert.Equal(t, "--------\nGraphViz of the ZkTrieImpl with RootHash 4467834053890953620178129130613022752584671477523987938903027600190138488269\ndigraph hierarchy {\nnode [fontname=Monospace,fontsize=10,shape=box]\n\"44678340...\" -> {\"empty0\" \"63478298...\"}\n\"empty0\" [style=dashed,label=0];\n\"63478298...\" -> {\"14984317...\" \"12008367...\"}\n\"14984317...\" [style=filled];\n\"12008367...\" [style=filled];\n}\nEnd of GraphViz of the ZkTrieImpl with RootHash 4467834053890953620178129130613022752584671477523987938903027600190138488269\n--------\n", buffer.String())
 	buffer.Reset()
 }

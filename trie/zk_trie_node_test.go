@@ -28,7 +28,7 @@ func TestNewLeafNode(t *testing.T) {
 
 	hash, err := node.NodeHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "0000000000000000000000000000000000000000000000000000000118eef34a", hash.Hex())
+	assert.Equal(t, "11de0a8aa076bd8ae4fe7641f8be3fff040d0818b1bfbb5822b96a7455db5e34", hash.Hex())
 }
 
 func TestNewParentNode(t *testing.T) {
@@ -41,7 +41,7 @@ func TestNewParentNode(t *testing.T) {
 
 	hash, err := node.NodeHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000b52462b9", hash.Hex())
+	assert.Equal(t, "00000000000000000000000000010824794d0612b8ca3c8fed1f3366e67b0401", hash.Hex())
 }
 
 func TestNewParentNodeWithEmptyChild(t *testing.T) {
@@ -56,7 +56,7 @@ func TestNewParentNodeWithEmptyChild(t *testing.T) {
 
 	hash, err := node.NodeHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000e85bb078", hash.Hex())
+	assert.Equal(t, "00000000000000000000000000010824794d0612b8ca3c76c4f10743d2710000", hash.Hex())
 }
 
 func TestNewNodeFromBytes(t *testing.T) {
@@ -75,7 +75,7 @@ func TestNewNodeFromBytes(t *testing.T) {
 
 		hash, err := node.NodeHash()
 		assert.NoError(t, err)
-		assert.Equal(t, "000000000000000000000000000000000000000000000000000000003c8b88fa", hash.Hex())
+		assert.Equal(t, "00000000000000000000000000010824794d0612b8ca3c9b1982e40262c20000", hash.Hex())
 	})
 
 	t.Run("LeafNode", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestNewNodeFromBytes(t *testing.T) {
 
 		hash, err := node.NodeHash()
 		assert.NoError(t, err)
-		assert.Equal(t, "0000000000000000000000000000000000000000000000000000000118eef34a", hash.Hex())
+		assert.Equal(t, "11de0a8aa076bd8ae4fe7641f8be3fff040d0818b1bfbb5822b96a7455db5e34", hash.Hex())
 	})
 
 	t.Run("EmptyNode", func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestNodeHash(t *testing.T) {
 	parent := NewParentNode(childL, childR)
 	parentHash, err := parent.NodeHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "0000000000000000000000000000000000000000000000000000000019d6dd98", parentHash.Hex())
+	assert.Equal(t, "000000000000000000000000000000000b741c46157667065459d04f0d7d4a61", parentHash.Hex())
 
 	kHash := zkt.NewHashFromBytes(big.NewInt(123456789).Bytes())
 	vPreimageByte32 := zkt.NewByte32FromBytes(big.NewInt(987654321).Bytes())
@@ -170,10 +170,10 @@ func TestNodeHash(t *testing.T) {
 	leaf := NewLeafNode(kHash, 1, vPreimage)
 	leafHash, err := leaf.NodeHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000e3daef6f", leafHash.Hex())
+	assert.Equal(t, "000000832f17a884b8d4898785b3c9102f088cb8d04984da8d3f45f0129538c1", leafHash.Hex())
 	valueHash, err := zkt.PreHandlingElems(1, vPreimage)
 	assert.NoError(t, err)
-	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000256238cd", valueHash.Hex())
+	assert.Equal(t, "0000000000000000000000000000000000000000000000000d8988a9f1cc4a61", valueHash.Hex())
 
 	node := &Node{Type: 99}
 	invalidNodeHash, err := node.NodeHash()
@@ -193,7 +193,7 @@ func TestValueHash(t *testing.T) {
 
 	hash, err := node.ValueHash()
 	assert.NoError(t, err)
-	assert.Equal(t, "00000000000000000000000000000000000000000000000000000000ecd3ed44", hash.Hex())
+	assert.Equal(t, "1b8c86dd277f539299508c05279ed02204bb8ef4e2a37b831c2114adc49409a9", hash.Hex())
 }
 
 func TestNonLeafValueHash(t *testing.T) {
