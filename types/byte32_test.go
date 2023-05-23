@@ -1,6 +1,7 @@
 package zktrie
 
 import (
+	"bytes"
 	"math/big"
 	"testing"
 
@@ -26,57 +27,38 @@ func init() {
 	InitHashScheme(testHash)
 }
 
-func TestByte32Hash(t *testing.T) {
-	b := new(Byte32)
-	for i := 0; i < 32; i++ {
-		b[i] = byte(i)
-	}
-	hash, err := b.Hash()
-	assert.NoError(t, err)
-	assert.Equal(t, big.NewInt(2201952636), hash)
-}
-
-func TestByte32Bytes(t *testing.T) {
-	b := new(Byte32)
-	expectedValue := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		value := byte(i)
-		b[i] = value
-		expectedValue[i] = value
-	}
-	assert.Equal(t, expectedValue, b.Bytes())
-}
-
-func TestNewByte32FromBytes(t *testing.T) {
+func TestNewByte32FromBytesAndPaddingZero(t *testing.T) {
 	var tests = []struct {
-		input []byte
-		want  Byte32
+		input               []byte
+		expected            []byte
+		expectedPaddingZero []byte
+		expectedHash        *big.Int
+		expectedHashPadding *big.Int
 	}{
-		{[]byte{1, 2, 3, 4}, [32]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4}},
-		{[]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34}, [32]byte{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34}},
-	}
-
-	for _, tt := range tests {
-		assert.Equal(t, tt.want, *NewByte32FromBytes(tt.input))
-	}
-}
-
-func TestNewByte32FromBytesPaddingZero(t *testing.T) {
-	var tests = []struct {
-		input []byte
-		want  Byte32
-	}{
-		{
-			[]byte{1, 2, 3, 4},
-			[32]byte{1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{bytes.Repeat([]byte{1}, 4),
+			[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1},
+			[]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			big.NewInt(4964305546),
+			big.NewInt(3764529366),
 		},
-		{
-			[]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34},
-			[32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
+		{bytes.Repeat([]byte{1}, 34),
+			[]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			[]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			big.NewInt(3086631147),
+			big.NewInt(3086631147),
 		},
 	}
 
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, *NewByte32FromBytesPaddingZero(tt.input))
+		byte32Result := NewByte32FromBytes(tt.input)
+		byte32PaddingResult := NewByte32FromBytesPaddingZero(tt.input)
+		assert.Equal(t, tt.expected, byte32Result.Bytes())
+		assert.Equal(t, tt.expectedPaddingZero, byte32PaddingResult.Bytes())
+		hashResult, err := byte32Result.Hash()
+		assert.NoError(t, err)
+		hashPaddingResult, err := byte32PaddingResult.Hash()
+		assert.NoError(t, err)
+		assert.Equal(t, tt.expectedHash, hashResult)
+		assert.Equal(t, tt.expectedHashPadding, hashPaddingResult)
 	}
 }
