@@ -9,21 +9,20 @@ import (
 )
 
 func init() {
-	var lcEff *big.Int
-	var prime = int64(5915587277)
+	lcEff := big.NewInt(65536)
+	prime, _ := new(big.Int).SetString("115792089237316195423570985008687907853269984665640564039457584007908834671663", 10)
 
 	testHash := func(arr []*big.Int) (*big.Int, error) {
 		sum := big.NewInt(0)
 		for _, bi := range arr {
-			nbi := big.NewInt(0).Mul(bi, bi)
+			nbi := new(big.Int).Mul(bi, bi)
 			sum = sum.Mul(sum, sum)
 			sum = sum.Mul(sum, lcEff)
 			sum = sum.Add(sum, nbi)
 		}
-		return sum.Mod(sum, big.NewInt(prime)), nil
+		return sum.Mod(sum, prime), nil
 	}
 
-	lcEff = big.NewInt(65536)
 	InitHashScheme(testHash)
 }
 
@@ -32,20 +31,20 @@ func TestNewByte32(t *testing.T) {
 		input               []byte
 		expected            []byte
 		expectedPaddingZero []byte
-		expectedHash        *big.Int
-		expectedHashPadding *big.Int
+		expectedHash        string
+		expectedHashPadding string
 	}{
 		{bytes.Repeat([]byte{1}, 4),
 			[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1},
 			[]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			big.NewInt(4964305546),
-			big.NewInt(3764529366),
+			"283686952174081",
+			"10854753567005534538060156430056055935965300469302387031436241414646986205738",
 		},
 		{bytes.Repeat([]byte{1}, 34),
 			[]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 			[]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			big.NewInt(3086631147),
-			big.NewInt(3086631147),
+			"87978124945399561094017330311065670766621950515520257782675953699248863509509",
+			"87978124945399561094017330311065670766621950515520257782675953699248863509509",
 		},
 	}
 
@@ -58,7 +57,7 @@ func TestNewByte32(t *testing.T) {
 		assert.NoError(t, err)
 		hashPaddingResult, err := byte32PaddingResult.Hash()
 		assert.NoError(t, err)
-		assert.Equal(t, tt.expectedHash, hashResult)
-		assert.Equal(t, tt.expectedHashPadding, hashPaddingResult)
+		assert.Equal(t, tt.expectedHash, hashResult.String())
+		assert.Equal(t, tt.expectedHashPadding, hashPaddingResult.String())
 	}
 }

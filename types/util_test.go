@@ -2,6 +2,7 @@ package zktrie
 
 import (
 	"math/big"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,13 +56,13 @@ func TestBigEndianBitsToBigInt(t *testing.T) {
 func TestToSecureKey(t *testing.T) {
 	secureKey, err := ToSecureKey([]byte("testKey"))
 	assert.NoError(t, err)
-	assert.Equal(t, big.NewInt(5634124374), secureKey)
+	assert.Equal(t, "38357272897674900411107081535936389234910988338891909398812022532881453900469", secureKey.String())
 }
 
 func TestToSecureKeyBytes(t *testing.T) {
 	secureKeyBytes, err := ToSecureKeyBytes([]byte("testKey"))
 	assert.NoError(t, err)
-	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x4f, 0xd1, 0xea, 0x56}, secureKeyBytes.Bytes())
+	assert.Equal(t, []byte{0x54, 0xcd, 0x72, 0x75, 0x8e, 0x77, 0xe1, 0xc, 0xdb, 0xa8, 0xf4, 0x86, 0x3a, 0xdb, 0x35, 0xba, 0x69, 0x56, 0xda, 0x2b, 0xcb, 0xb8, 0x4c, 0x4c, 0xf5, 0x59, 0x1e, 0x80, 0xfd, 0xc3, 0x62, 0xb5}, secureKeyBytes.Bytes())
 }
 
 func TestReverseByteOrder(t *testing.T) {
@@ -71,30 +72,26 @@ func TestReverseByteOrder(t *testing.T) {
 func TestHashElems(t *testing.T) {
 	fst := big.NewInt(5)
 	snd := big.NewInt(3)
-	elems := []*big.Int{big.NewInt(2)}
+	elems := make([]*big.Int, 32)
+	for i := range elems {
+		elems[i] = big.NewInt(int64(i + 1))
+	}
 
 	result, err := HashElems(fst, snd, elems...)
 	assert.NoError(t, err)
-	assert.Equal(t, "0000000000000000000000000000000000000000000000000000000032357c84", result.Hex())
-
-	elems = append(elems, big.NewInt(1), big.NewInt(4))
-	result, err = HashElems(fst, snd, elems...)
-	assert.NoError(t, err)
-	assert.Equal(t, "000000000000000000000000000000000000000000000000000000006cd45985", result.Hex())
+	assert.Equal(t, "481ef46d7a6ddd6be6672ac7fa9cc7512513e282da1b0150c0d0cc5921862d65", result.Hex())
 }
 
 func TestPreHandlingElems(t *testing.T) {
-	flagArray := uint32(0b1010)
-	elems := []Byte32{
-		*NewByte32FromBytes([]byte("test1")),
-		*NewByte32FromBytes([]byte("test2")),
-		*NewByte32FromBytes([]byte("test3")),
-		*NewByte32FromBytes([]byte("test4")),
+	flagArray := uint32(0b10101010101010101010101010101010)
+	elems := make([]Byte32, 32)
+	for i := range elems {
+		elems[i] = *NewByte32FromBytes([]byte("test" + strconv.Itoa(i+1)))
 	}
 
 	result, err := PreHandlingElems(flagArray, elems)
 	assert.NoError(t, err)
-	assert.Equal(t, "0000000000000000000000000000000000000000000000000000000064beb06b", result.Hex())
+	assert.Equal(t, "5aa16cff7cef7e6a1af00a9bd9f155016e6cae06936e871745de8fd8bb33b742", result.Hex())
 
 	elems = elems[:1]
 	result, err = PreHandlingElems(flagArray, elems)
