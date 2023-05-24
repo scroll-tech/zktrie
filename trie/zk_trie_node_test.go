@@ -79,8 +79,8 @@ func TestNewNode(t *testing.T) {
 		node := &Node{Type: 99}
 
 		invalidNodeHash, err := node.NodeHash()
-		assert.Error(t, err)
-		assert.Nil(t, invalidNodeHash)
+		assert.NoError(t, err)
+		assert.Equal(t, &zkt.HashZero, invalidNodeHash)
 	})
 }
 
