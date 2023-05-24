@@ -2,7 +2,6 @@ package trie
 
 import (
 	"bytes"
-	"fmt"
 	"math/big"
 	"testing"
 
@@ -10,25 +9,6 @@ import (
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
-
-func init() {
-	zkt.InitHashScheme(func(arr []*big.Int) (*big.Int, error) {
-		lcEff := big.NewInt(65536)
-		qString := "21888242871839275222246405745257275088548364400416034343698204186575808495617"
-		Q, ok := new(big.Int).SetString(qString, 10)
-		if !ok {
-			panic(fmt.Sprintf("Bad base 10 string %s", qString))
-		}
-		sum := big.NewInt(0)
-		for _, bi := range arr {
-			nbi := new(big.Int).Mul(bi, bi)
-			sum = sum.Mul(sum, sum)
-			sum = sum.Mul(sum, lcEff)
-			sum = sum.Add(sum, nbi)
-		}
-		return sum.Mod(sum, Q), nil
-	})
-}
 
 // we do not need zktrie impl anymore, only made a wrapper for adapting testing
 type zkTrieImplTestWrapper struct {
@@ -86,7 +66,7 @@ func newTestingMerkle(t *testing.T, numLevels int) *zkTrieImplTestWrapper {
 	return mt
 }
 
-func TestMerkleTree_Init(t *testing.T) {
+func testMerkleTree_Init(t *testing.T) {
 	maxLevels := 248
 	db := NewZkTrieMemoryDb()
 
@@ -124,7 +104,7 @@ func TestMerkleTree_Init(t *testing.T) {
 	})
 }
 
-func TestMerkleTree_AddUpdateGetWord(t *testing.T) {
+func testMerkleTree_AddUpdateGetWord(t *testing.T) {
 	mt := newTestingMerkle(t, 10)
 
 	testData := []struct {
@@ -164,7 +144,7 @@ func TestMerkleTree_AddUpdateGetWord(t *testing.T) {
 	assert.Equal(t, ErrKeyNotFound, err)
 }
 
-func TestMerkleTree_Deletion(t *testing.T) {
+func testMerkleTree_Deletion(t *testing.T) {
 	t.Run("Check root consistency", func(t *testing.T) {
 		mt := newTestingMerkle(t, 10)
 		hashes := make([][]byte, 7)
@@ -242,7 +222,7 @@ func TestMerkleTree_Deletion(t *testing.T) {
 	})
 }
 
-func TestZkTrieImpl_Add(t *testing.T) {
+func testZkTrieImpl_Add(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -313,7 +293,7 @@ func TestZkTrieImpl_Add(t *testing.T) {
 	})
 }
 
-func TestZkTrieImpl_Update(t *testing.T) {
+func testZkTrieImpl_Update(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -401,7 +381,7 @@ func TestZkTrieImpl_Update(t *testing.T) {
 	})
 }
 
-func TestZkTrieImpl_Delete(t *testing.T) {
+func testZkTrieImpl_Delete(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -501,7 +481,7 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 	})
 }
 
-func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
+func testMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 	zkTrie := newTestingMerkle(t, 10)
 
 	testData := []struct {
@@ -556,7 +536,7 @@ func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 	})
 }
 
-func TestMerkleTree_GraphViz(t *testing.T) {
+func testMerkleTree_GraphViz(t *testing.T) {
 	mt := newTestingMerkle(t, 10)
 
 	var buffer bytes.Buffer

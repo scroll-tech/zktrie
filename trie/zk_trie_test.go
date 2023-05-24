@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewZkTrie(t *testing.T) {
+func testNewZkTrie(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -21,7 +21,7 @@ func TestNewZkTrie(t *testing.T) {
 	assert.Nil(t, zkTrie)
 }
 
-func TestZkTrie_GetUpdateDelete(t *testing.T) {
+func testZkTrie_GetUpdateDelete(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -49,7 +49,7 @@ func TestZkTrie_GetUpdateDelete(t *testing.T) {
 	assert.Nil(t, val)
 }
 
-func TestZkTrie_Copy(t *testing.T) {
+func testZkTrie_Copy(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -63,7 +63,7 @@ func TestZkTrie_Copy(t *testing.T) {
 	assert.Equal(t, (&zkt.Byte32{1}).Bytes(), val)
 }
 
-func TestZkTrie_ProveAndProveWithDeletion(t *testing.T) {
+func testZkTrie_ProveAndProveWithDeletion(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)

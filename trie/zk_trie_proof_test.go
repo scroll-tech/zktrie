@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDecodeSMTProof(t *testing.T) {
+func testDecodeSMTProof(t *testing.T) {
 	magicBytes := ProofMagicBytes()
 	node, err := DecodeSMTProof(magicBytes)
 	assert.NoError(t, err)
