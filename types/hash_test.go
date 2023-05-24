@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testDummyHash(t *testing.T) {
+func TestDummyHash(t *testing.T) {
 	result, err := dummyHash([]*big.Int{})
 	assert.Equal(t, big.NewInt(0), result)
 	assert.Equal(t, hashNotInitErr, err)
 }
 
-func testCheckBigIntInField(t *testing.T) {
+func TestCheckBigIntInField(t *testing.T) {
 	bi := big.NewInt(0)
 	assert.True(t, CheckBigIntInField(bi))
 
@@ -26,7 +26,7 @@ func testCheckBigIntInField(t *testing.T) {
 	assert.False(t, CheckBigIntInField(bi))
 }
 
-func testNewHashAndBigIntFromBytes(t *testing.T) {
+func TestNewHashAndBigIntFromBytes(t *testing.T) {
 	b := bytes.Repeat([]byte{1}, 32)
 	h := NewHashFromBytes(b)
 	assert.Equal(t, "0101010101010101010101010101010101010101010101010101010101010101", h.Hex())
@@ -65,7 +65,7 @@ func testNewHashAndBigIntFromBytes(t *testing.T) {
 	assert.Equal(t, "NewBigIntFromHashBytes: Value not inside the Finite Field", err.Error())
 }
 
-func testNewHashFromBigIntAndString(t *testing.T) {
+func TestNewHashFromBigIntAndString(t *testing.T) {
 	bi := big.NewInt(12345)
 	h := NewHashFromBigInt(bi)
 	assert.Equal(t, "0000000000000000000000000000000000000000000000000000000000003039", h.Hex())

@@ -2,12 +2,39 @@ package zktrie
 
 import (
 	"bytes"
+	"fmt"
+	"math/big"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func testNewByte32(t *testing.T) {
+func setupENV() {
+	InitHashScheme(func(arr []*big.Int) (*big.Int, error) {
+		lcEff := big.NewInt(65536)
+		qString := "21888242871839275222246405745257275088548364400416034343698204186575808495617"
+		Q, ok := new(big.Int).SetString(qString, 10)
+		if !ok {
+			panic(fmt.Sprintf("Bad base 10 string %s", qString))
+		}
+		sum := big.NewInt(0)
+		for _, bi := range arr {
+			nbi := new(big.Int).Mul(bi, bi)
+			sum = sum.Mul(sum, sum)
+			sum = sum.Mul(sum, lcEff)
+			sum = sum.Add(sum, nbi)
+		}
+		return sum.Mod(sum, Q), nil
+	})
+}
+
+func TestMain(m *testing.M) {
+	setupENV()
+	os.Exit(m.Run())
+}
+
+func TestNewByte32(t *testing.T) {
 	var tests = []struct {
 		input               []byte
 		expected            []byte
