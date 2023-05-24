@@ -1,13 +1,40 @@
 package trie
 
 import (
+	"fmt"
+	"math/big"
+	"os"
 	"testing"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func testNewZkTrie(t *testing.T) {
+func setupENV() {
+	zkt.InitHashScheme(func(arr []*big.Int) (*big.Int, error) {
+		lcEff := big.NewInt(65536)
+		qString := "21888242871839275222246405745257275088548364400416034343698204186575808495617"
+		Q, ok := new(big.Int).SetString(qString, 10)
+		if !ok {
+			panic(fmt.Sprintf("Bad base 10 string %s", qString))
+		}
+		sum := big.NewInt(0)
+		for _, bi := range arr {
+			nbi := new(big.Int).Mul(bi, bi)
+			sum = sum.Mul(sum, sum)
+			sum = sum.Mul(sum, lcEff)
+			sum = sum.Add(sum, nbi)
+		}
+		return sum.Mod(sum, Q), nil
+	})
+}
+
+func TestMain(m *testing.M) {
+	setupENV()
+	os.Exit(m.Run())
+}
+
+func TestNewZkTrie(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -21,7 +48,7 @@ func testNewZkTrie(t *testing.T) {
 	assert.Nil(t, zkTrie)
 }
 
-func testZkTrie_GetUpdateDelete(t *testing.T) {
+func TestZkTrie_GetUpdateDelete(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -49,7 +76,7 @@ func testZkTrie_GetUpdateDelete(t *testing.T) {
 	assert.Nil(t, val)
 }
 
-func testZkTrie_Copy(t *testing.T) {
+func TestZkTrie_Copy(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)
@@ -63,7 +90,7 @@ func testZkTrie_Copy(t *testing.T) {
 	assert.Equal(t, (&zkt.Byte32{1}).Bytes(), val)
 }
 
-func testZkTrie_ProveAndProveWithDeletion(t *testing.T) {
+func TestZkTrie_ProveAndProveWithDeletion(t *testing.T) {
 	root := zkt.Byte32{}
 	db := NewZkTrieMemoryDb()
 	zkTrie, err := NewZkTrie(root, db)

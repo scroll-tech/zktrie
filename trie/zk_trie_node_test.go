@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testNewNode(t *testing.T) {
+func TestNewNode(t *testing.T) {
 	t.Run("Test NewEmptyNode", func(t *testing.T) {
 		node := NewEmptyNode()
 		assert.Equal(t, NodeTypeEmpty, node.Type)
@@ -84,7 +84,7 @@ func testNewNode(t *testing.T) {
 	})
 }
 
-func testNewNodeFromBytes(t *testing.T) {
+func TestNewNodeFromBytes(t *testing.T) {
 	t.Run("ParentNode", func(t *testing.T) {
 		k1 := zkt.NewHashFromBytes(bytes.Repeat([]byte("a"), 32))
 		k2 := zkt.NewHashFromBytes(bytes.Repeat([]byte("b"), 32))
@@ -193,7 +193,7 @@ func testNewNodeFromBytes(t *testing.T) {
 	})
 }
 
-func testNodeValueAndData(t *testing.T) {
+func TestNodeValueAndData(t *testing.T) {
 	k := zkt.NewHashFromBytes(bytes.Repeat([]byte("a"), 32))
 	vp := []zkt.Byte32{*zkt.NewByte32FromBytes(bytes.Repeat([]byte("b"), 32))}
 
@@ -219,7 +219,7 @@ func testNodeValueAndData(t *testing.T) {
 	assert.Nil(t, invalidNode.Data())
 }
 
-func testNodeString(t *testing.T) {
+func TestNodeString(t *testing.T) {
 	k := zkt.NewHashFromBytes(bytes.Repeat([]byte("a"), 32))
 	vp := []zkt.Byte32{*zkt.NewByte32FromBytes(bytes.Repeat([]byte("b"), 32))}
 

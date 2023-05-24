@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testDatabase(t *testing.T) {
+func TestDatabase(t *testing.T) {
 	db := NewZkTrieMemoryDb()
 	db.UpdatePreimage(nil, nil)
 	for i := 0; i < 100; i++ {

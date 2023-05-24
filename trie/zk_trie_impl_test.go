@@ -66,7 +66,7 @@ func newTestingMerkle(t *testing.T, numLevels int) *zkTrieImplTestWrapper {
 	return mt
 }
 
-func testMerkleTree_Init(t *testing.T) {
+func TestMerkleTree_Init(t *testing.T) {
 	maxLevels := 248
 	db := NewZkTrieMemoryDb()
 
@@ -104,7 +104,7 @@ func testMerkleTree_Init(t *testing.T) {
 	})
 }
 
-func testMerkleTree_AddUpdateGetWord(t *testing.T) {
+func TestMerkleTree_AddUpdateGetWord(t *testing.T) {
 	mt := newTestingMerkle(t, 10)
 
 	testData := []struct {
@@ -144,7 +144,7 @@ func testMerkleTree_AddUpdateGetWord(t *testing.T) {
 	assert.Equal(t, ErrKeyNotFound, err)
 }
 
-func testMerkleTree_Deletion(t *testing.T) {
+func TestMerkleTree_Deletion(t *testing.T) {
 	t.Run("Check root consistency", func(t *testing.T) {
 		mt := newTestingMerkle(t, 10)
 		hashes := make([][]byte, 7)
@@ -222,7 +222,7 @@ func testMerkleTree_Deletion(t *testing.T) {
 	})
 }
 
-func testZkTrieImpl_Add(t *testing.T) {
+func TestZkTrieImpl_Add(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -293,7 +293,7 @@ func testZkTrieImpl_Add(t *testing.T) {
 	})
 }
 
-func testZkTrieImpl_Update(t *testing.T) {
+func TestZkTrieImpl_Update(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -381,7 +381,7 @@ func testZkTrieImpl_Update(t *testing.T) {
 	})
 }
 
-func testZkTrieImpl_Delete(t *testing.T) {
+func TestZkTrieImpl_Delete(t *testing.T) {
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
@@ -481,7 +481,7 @@ func testZkTrieImpl_Delete(t *testing.T) {
 	})
 }
 
-func testMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
+func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 	zkTrie := newTestingMerkle(t, 10)
 
 	testData := []struct {
@@ -536,7 +536,7 @@ func testMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 	})
 }
 
-func testMerkleTree_GraphViz(t *testing.T) {
+func TestMerkleTree_GraphViz(t *testing.T) {
 	mt := newTestingMerkle(t, 10)
 
 	var buffer bytes.Buffer
