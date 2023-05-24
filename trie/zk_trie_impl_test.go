@@ -103,20 +103,20 @@ func TestMerkleTree_Init(t *testing.T) {
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node exists", func(t *testing.T) {
-		mt, err := NewZkTrieImplWithRoot(db, &zkt.HashZero, maxLevels)
+		mt1, err := NewZkTrieImplWithRoot(db, &zkt.HashZero, maxLevels)
 		assert.NoError(t, err)
-		assert.Equal(t, zkt.HashZero.Bytes(), mt.Root().Bytes())
-		err = mt.TryUpdate(zkt.NewHashFromBytes([]byte{1}), 1, []zkt.Byte32{{byte(1)}})
+		assert.Equal(t, zkt.HashZero.Bytes(), mt1.Root().Bytes())
+		err = mt1.TryUpdate(zkt.NewHashFromBytes([]byte{1}), 1, []zkt.Byte32{{byte(1)}})
 		assert.NoError(t, err)
 
-		mt2, err := NewZkTrieImplWithRoot(db, mt.Root(), maxLevels)
+		mt2, err := NewZkTrieImplWithRoot(db, mt1.Root(), maxLevels)
 		assert.NoError(t, err)
 		assert.Equal(t, maxLevels, mt2.maxLevels)
 		assert.Equal(t, "2120d2ba46996633e29ae090371f704ae8a1fac40c782030824e93af0540e663", mt2.Root().Hex())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node does not exist", func(t *testing.T) {
-		root := zkt.NewHashFromBytes([]byte{11, 12, 13, 14, 15, 16, 17, 18, 19, 20})
+		root := zkt.NewHashFromBytes([]byte{1, 2, 3, 4, 5})
 
 		mt, err := NewZkTrieImplWithRoot(db, root, maxLevels)
 		assert.Error(t, err)
@@ -402,7 +402,6 @@ func TestZkTrieImpl_Update(t *testing.T) {
 }
 
 func TestZkTrieImpl_Delete(t *testing.T) {
-	// Initialize keys
 	k1 := zkt.NewByte32FromBytes([]byte{1})
 	k2 := zkt.NewByte32FromBytes([]byte{2})
 	k3 := zkt.NewByte32FromBytes([]byte{3})
