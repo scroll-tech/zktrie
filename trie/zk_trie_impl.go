@@ -607,7 +607,7 @@ func VerifyProofZkTrie(rootHash *zkt.Hash, proof *Proof, node *Node) bool {
 }
 
 // Verify the proof and calculate the root, nodeHash can be nil when try to verify
-// an nonexistent proof
+// a nonexistent proof
 func (proof *Proof) Verify(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error) {
 	if proof.Existence {
 		if nodeHash == nil {
@@ -700,6 +700,13 @@ func (mt *ZkTrieImpl) Walk(rootHash *zkt.Hash, f func(*Node)) error {
 // GraphViz uses Walk function to generate a string GraphViz representation of
 // the tree and writes it to w
 func (mt *ZkTrieImpl) GraphViz(w io.Writer, rootHash *zkt.Hash) error {
+	if rootHash == nil {
+		rootHash = mt.Root()
+	}
+
+	fmt.Fprintf(w,
+		"--------\nGraphViz of the ZkTrieImpl with RootHash "+rootHash.BigInt().String()+"\n")
+
 	fmt.Fprintf(w, `digraph hierarchy {
 node [fontname=Monospace,fontsize=10,shape=box]
 `)
@@ -730,27 +737,12 @@ node [fontname=Monospace,fontsize=10,shape=box]
 		}
 	})
 	fmt.Fprintf(w, "}\n")
+
+	fmt.Fprintf(w,
+		"End of GraphViz of the ZkTrieImpl with RootHash "+rootHash.BigInt().String()+"\n--------\n")
+
 	if errIn != nil {
 		return errIn
 	}
 	return err
-}
-
-// PrintGraphViz prints directly the GraphViz() output
-func (mt *ZkTrieImpl) PrintGraphViz(rootHash *zkt.Hash) error {
-	if rootHash == nil {
-		rootHash = mt.Root()
-	}
-	w := bytes.NewBufferString("")
-	fmt.Fprintf(w,
-		"--------\nGraphViz of the ZkTrieImpl with RootHash "+rootHash.BigInt().String()+"\n")
-	err := mt.GraphViz(w, nil)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(w,
-		"End of GraphViz of the ZkTrieImpl with RootHash "+rootHash.BigInt().String()+"\n--------\n")
-
-	fmt.Println(w)
-	return nil
 }

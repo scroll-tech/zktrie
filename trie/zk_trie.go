@@ -155,7 +155,7 @@ func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) 
 //
 // If the trie contain value for key, the onHit is called BEFORE writeNode being called,
 // both the hitted leaf node and its sibling node is provided as arguments so caller
-// would receiv enough information for launch a deletion and calculate the new root
+// would receive enough information for launch a deletion and calculate the new root
 // base on the proof data
 // Also notice the sibling can be nil if the trie has only one leaf
 func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*Node) error, onHit func(*Node, *Node)) error {
