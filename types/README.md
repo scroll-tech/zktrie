@@ -1,4 +1,4 @@
-corresponding# Type for zktrie
+# Type for zktrie
 
 ## Data Format in stateDb
 
