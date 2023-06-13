@@ -25,7 +25,7 @@ zktrie_util::init_hash_scheme(hash_scheme);
 
 ```
 
-All the zktrie can share one unerlying database, which can be initialized by putting the encoded trie node data directly
+All the zktrie can share one underlying database, which can be initialized by putting the encoded trie node data directly
 
 ```rust
 
