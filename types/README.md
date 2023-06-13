@@ -1,4 +1,4 @@
-# Type for zktrie
+corresponding# Type for zktrie
 
 ## Data Format in stateDb
 
@@ -44,7 +44,7 @@ A `field` is an element in prime field of BN256 represented by **big endian** in
 
 A `compressed field` is a field represented by **big endian** integer which could be contained in 16 bytes;
 
-For the total `value len` items of `value field` (maximum 255), the first 24 `value field`s can be recorded as `field` or 2x `compressed field` (i.e. a byte32). The corresonpdoing bit in `compress flag` is set to 1 if it was recorded as byte32, or 0 for a field.
+For the total `value len` items of `value field` (maximum 255), the first 24 `value field`s can be recorded as `field` or 2x `compressed field` (i.e. a byte32). The corresponding bit in `compress flag` is set to 1 if it was recorded as byte32, or 0 for a field.
 
 ## Key scheme
 
@@ -116,7 +116,7 @@ Can be decompose to:
 + `0000000000000000000000000000000000000000000000000000000000000000`: value field 1 (balance)
 + `29b74e075daad9f17eb39cd893c2dd32f52ecd99084d63964842defd00ebcbe2`: value field 2 (codeHash, as byte32)
 + `08a2f471d50e56ac5000ab9e82f871e36b5a636b19bd02f70aa666a3bd03142f`: value field 3 (storage root)
-+ `00`: key preimage is not avaliable
++ `00`: key preimage is not available
 
 The key calculation for this node is:
 
@@ -134,7 +134,7 @@ key = poseidon(layer1[0], layer1[1])
 
 ```
 
-Notice all field and compressed field are represented as **big endian** integer.
+Notice all fields and compressed fields are represented as **big endian** integer.
 
 ### A parent node in account trie:
 
