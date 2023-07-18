@@ -25,6 +25,13 @@ const (
 	// DBEntryTypeRoot indicates the type of a DB entry that indicates the
 	// current Root of a MerkleTree
 	DBEntryTypeRoot NodeType = 3
+
+	NodeTypeLeaf_New  NodeType = 4
+	NodeTypeEmpty_New NodeType = 5
+	NodeTypeBranch_0  NodeType = 6
+	NodeTypeBranch_1  NodeType = 7
+	NodeTypeBranch_2  NodeType = 8
+	NodeTypeBranch_3  NodeType = 9
 )
 
 // Node is the struct that represents a node in the MT. The node should not be

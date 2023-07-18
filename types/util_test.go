@@ -56,13 +56,13 @@ func TestBigEndianBitsToBigInt(t *testing.T) {
 func TestToSecureKey(t *testing.T) {
 	secureKey, err := ToSecureKey([]byte("testKey"))
 	assert.NoError(t, err)
-	assert.Equal(t, "17571106468431745531706442476067603634164190589809290674663620802670121169536", secureKey.String())
+	assert.Equal(t, "3998087801436302712617435196225481036627874106324392591598072448097460358227", secureKey.String())
 }
 
 func TestToSecureKeyBytes(t *testing.T) {
 	secureKeyBytes, err := ToSecureKeyBytes([]byte("testKey"))
 	assert.NoError(t, err)
-	assert.Equal(t, []byte{0x26, 0xd8, 0xe4, 0xd1, 0xde, 0xf3, 0xac, 0x54, 0x62, 0x1d, 0x56, 0x24, 0x94, 0xf2, 0x63, 0x8b, 0x96, 0x74, 0x4c, 0x3b, 0xd6, 0x91, 0x3f, 0x49, 0xa6, 0xe6, 0x9d, 0x42, 0xb3, 0x6b, 0xb2, 0x80}, secureKeyBytes.Bytes())
+	assert.Equal(t, []byte{0x8, 0xd6, 0xd6, 0x66, 0xa4, 0x8, 0xc5, 0x72, 0xa0, 0xc3, 0x71, 0x50, 0x89, 0xa0, 0x2b, 0xe7, 0x59, 0x97, 0x39, 0x5d, 0x2c, 0x37, 0x38, 0x5d, 0x67, 0x22, 0x84, 0xe5, 0xc8, 0xbf, 0xc, 0x53}, secureKeyBytes.Bytes())
 }
 
 func TestReverseByteOrder(t *testing.T) {
@@ -79,7 +79,7 @@ func TestHashElems(t *testing.T) {
 
 	result, err := HashElems(fst, snd, elems...)
 	assert.NoError(t, err)
-	assert.Equal(t, "2b918b092488dfd40bbafc1381447755b1846b13b3f846f0631a517d91710ebb", result.Hex())
+	assert.Equal(t, "1d3ea1d1664a49623f205fcf6fc8d680d4fe928de751b636bdcbc7865e86864e", result.Hex())
 }
 
 func TestPreHandlingElems(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPreHandlingElems(t *testing.T) {
 
 	result, err := PreHandlingElems(flagArray, elems)
 	assert.NoError(t, err)
-	assert.Equal(t, "1bc868a5ce9d19e154039ab7b24b08b260ffbd3f7279244eed4fb9293a1ae719", result.Hex())
+	assert.Equal(t, "22b446e5c2545152b37a7774d1e91423bfd8848bc1676fec5196d7dbac98d247", result.Hex())
 
 	elems = elems[:1]
 	result, err = PreHandlingElems(flagArray, elems)

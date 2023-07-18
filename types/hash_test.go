@@ -10,7 +10,7 @@ import (
 )
 
 func TestDummyHash(t *testing.T) {
-	result, err := dummyHash([]*big.Int{})
+	result, err := dummyHash([]*big.Int{}, nil)
 	assert.Equal(t, big.NewInt(0), result)
 	assert.Equal(t, hashNotInitErr, err)
 }

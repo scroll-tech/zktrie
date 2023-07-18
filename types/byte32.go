@@ -9,7 +9,7 @@ type Byte32 [32]byte
 func (b *Byte32) Hash() (*big.Int, error) {
 	first16 := new(big.Int).SetBytes(b[0:16])
 	last16 := new(big.Int).SetBytes(b[16:32])
-	hash, err := hashScheme([]*big.Int{first16, last16})
+	hash, err := hashScheme([]*big.Int{first16, last16}, big.NewInt(HASH_DOMAIN_BYTE32))
 	if err != nil {
 		return nil, err
 	}

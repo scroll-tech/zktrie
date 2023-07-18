@@ -4,19 +4,17 @@ import (
 	"math/big"
 )
 
-// HashElems performs a recursive poseidon hash over the array of ElemBytes, each hash
-// reduce 2 fieds into one
-func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
+func hashElems(domain, fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 
 	l := len(elems)
-	baseH, err := hashScheme([]*big.Int{fst, snd})
+	baseH, err := hashScheme([]*big.Int{fst, snd}, domain)
 	if err != nil {
 		return nil, err
 	}
 	if l == 0 {
 		return NewHashFromBigInt(baseH), nil
 	} else if l == 1 {
-		return HashElems(baseH, elems[0])
+		return hashElems(domain, baseH, elems[0])
 	}
 
 	tmp := make([]*big.Int, (l+1)/2)
@@ -24,7 +22,7 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 		if (i+1)*2 > l {
 			tmp[i] = elems[i*2]
 		} else {
-			h, err := hashScheme(elems[i*2 : (i+1)*2])
+			h, err := hashScheme(elems[i*2:(i+1)*2], domain)
 			if err != nil {
 				return nil, err
 			}
@@ -32,7 +30,14 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 		}
 	}
 
-	return HashElems(baseH, tmp[0], tmp[1:]...)
+	return hashElems(domain, baseH, tmp[0], tmp[1:]...)
+}
+
+// HashElems performs a recursive poseidon hash over the array of ElemBytes, each hash
+// reduce 2 fieds into one
+func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
+
+	return hashElems(big.NewInt(int64(len(elems))+2), fst, snd, elems...)
 }
 
 // PreHandlingElems turn persisted byte32 elements into field arrays for our hashElem
