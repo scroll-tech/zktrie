@@ -114,16 +114,19 @@ type Node struct {
 
 // NewLeafNode creates a new leaf node.
 func NewLeafNode(k *zkt.Hash, valueFlags uint32, valuePreimage []zkt.Byte32) *Node {
+	fmt.Println("new leaf")
 	return &Node{Type: NodeTypeLeaf_New, NodeKey: k, CompressedFlags: valueFlags, ValuePreimage: valuePreimage}
 }
 
 // NewParentNode creates a new parent node.
 func NewParentNode(ntype NodeType, childL *zkt.Hash, childR *zkt.Hash) *Node {
+	fmt.Println("new parent", ntype, childL, childR)
 	return &Node{Type: ntype, ChildL: childL, ChildR: childR}
 }
 
 // NewEmptyNode creates a new empty node.
 func NewEmptyNode() *Node {
+	fmt.Println("new empty")
 	return &Node{Type: NodeTypeEmpty_New}
 }
 
@@ -179,7 +182,7 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 // LeafHash computes the key of a leaf node given the hIndex and hValue of the
 // entry of the leaf.
 func LeafHash(k, v *zkt.Hash) (*zkt.Hash, error) {
-	return zkt.HashElemsWithDomain(big.NewInt(1), k.BigInt(), v.BigInt())
+	return zkt.HashElemsWithDomain(big.NewInt(int64(NodeTypeLeaf_New)), k.BigInt(), v.BigInt())
 }
 
 // IsTerminal returns if the node is 'terminated', i.e. empty or leaf node

@@ -2,6 +2,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -92,7 +93,7 @@ func TestMerkleTree_Init(t *testing.T) {
 		mt2, err := NewZkTrieImplWithRoot(db, mt1.Root(), maxLevels)
 		assert.NoError(t, err)
 		assert.Equal(t, maxLevels, mt2.maxLevels)
-		assert.Equal(t, "2120d2ba46996633e29ae090371f704ae8a1fac40c782030824e93af0540e663", mt2.Root().Hex())
+		assert.Equal(t, "0539c6b1cac741eb1e98b2c271733d1e6f0fad557228f6b039d894b0a627c8d9", mt2.Root().Hex())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node does not exist", func(t *testing.T) {
@@ -445,16 +446,20 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 
 		assert.Equal(t, mt1.Root().Bytes(), mt2.Root().Bytes())
 
+		fmt.Println("start mt3")
+
 		mt3 := newTestingMerkle(t, 10)
 		for i, key := range keys {
 			err := mt3.AddWord(key, zkt.NewByte32FromBytes([]byte{byte(i + 1)}))
 			assert.NoError(t, err)
 		}
+		fmt.Println("build mt3")
 		err = mt3.DeleteWord(k1)
 		assert.NoError(t, err)
 		err = mt3.DeleteWord(k3)
 		assert.NoError(t, err)
 
+		fmt.Println("start mt4")
 		mt4 := newTestingMerkle(t, 10)
 		err = mt4.AddWord(k2, zkt.NewByte32FromBytes([]byte{2}))
 		assert.NoError(t, err)
