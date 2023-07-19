@@ -40,17 +40,19 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 
 		finished := true
 		switch n.Type {
-		case NodeTypeEmpty:
-		case NodeTypeLeaf:
+		case NodeTypeEmpty_New:
+		case NodeTypeLeaf_New:
 			// notice even we found a leaf whose entry didn't match the expected k,
 			// we still include it as the proof of absence
-		case NodeTypeParent:
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			finished = false
 			if path[i] {
 				tn = n.ChildR
 			} else {
 				tn = n.ChildL
 			}
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter deprecated node types")
 		default:
 			return ErrInvalidNodeFound
 		}

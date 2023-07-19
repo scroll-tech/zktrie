@@ -79,7 +79,7 @@ func TestHashElems(t *testing.T) {
 
 	result, err := HashElems(fst, snd, elems...)
 	assert.NoError(t, err)
-	assert.Equal(t, "1d3ea1d1664a49623f205fcf6fc8d680d4fe928de751b636bdcbc7865e86864e", result.Hex())
+	assert.Equal(t, "1613b67f0a90f864bafa14df215f89e0c5a1c128e54561f0d730d112678e981d", result.Hex())
 }
 
 func TestPreHandlingElems(t *testing.T) {
@@ -89,12 +89,12 @@ func TestPreHandlingElems(t *testing.T) {
 		elems[i] = *NewByte32FromBytes([]byte("test" + strconv.Itoa(i+1)))
 	}
 
-	result, err := PreHandlingElems(flagArray, elems)
+	result, err := HandlingElemsAndByte32(flagArray, elems)
 	assert.NoError(t, err)
-	assert.Equal(t, "22b446e5c2545152b37a7774d1e91423bfd8848bc1676fec5196d7dbac98d247", result.Hex())
+	assert.Equal(t, "259503a5495e5e7e83d7e8e3f22b214092f921b7cadba00526aea7485c1997e7", result.Hex())
 
 	elems = elems[:1]
-	result, err = PreHandlingElems(flagArray, elems)
+	result, err = HandlingElemsAndByte32(flagArray, elems)
 	assert.NoError(t, err)
 	assert.Equal(t, "0000000000000000000000000000000000000000000000000000007465737431", result.Hex())
 }

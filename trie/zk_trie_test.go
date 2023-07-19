@@ -102,15 +102,10 @@ func TestZkTrie_ProveAndProveWithDeletion(t *testing.T) {
 			return nil
 		}
 
-		onHit := func(n *Node, sib *Node) {
-		}
-
 		k, err := zkt.ToSecureKey(key)
 		assert.NoError(t, err)
 
 		for j := 0; j <= i; j++ {
-			err = zkTrie.ProveWithDeletion(zkt.NewHashFromBigInt(k).Bytes(), uint(j), writeNode, onHit)
-			assert.NoError(t, err)
 
 			err = zkTrie.Prove(zkt.NewHashFromBigInt(k).Bytes(), uint(j), writeNode)
 			assert.NoError(t, err)

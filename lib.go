@@ -107,7 +107,7 @@ func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(pN)
 	n := h.Value().(*trie.Node)
 
-	if n.Type != trie.NodeTypeLeaf {
+	if n.Type != trie.NodeTypeEmpty_New {
 		return nil
 	}
 
