@@ -161,7 +161,9 @@ func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) 
 		}()
 
 		if prev != nil {
-			if prev.Type != NodeTypeParent {
+			switch prev.Type {
+			case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
+			default:
 				// sanity check: we should stop after obtain leaf/empty
 				panic("unexpected behavior in prove")
 			}

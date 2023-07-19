@@ -179,7 +179,7 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 // LeafHash computes the key of a leaf node given the hIndex and hValue of the
 // entry of the leaf.
 func LeafHash(k, v *zkt.Hash) (*zkt.Hash, error) {
-	return zkt.HashElemsWithDomain(big.NewInt(1), k.BigInt(), v.BigInt())
+	return zkt.HashElemsWithDomain(big.NewInt(int64(NodeTypeLeaf_New)), k.BigInt(), v.BigInt())
 }
 
 // IsTerminal returns if the node is 'terminated', i.e. empty or leaf node
