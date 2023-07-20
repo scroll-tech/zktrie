@@ -17,6 +17,7 @@
 package trie
 
 import (
+	"bytes"
 	"math/big"
 
 	zkt "github.com/scroll-tech/zktrie/types"
@@ -139,14 +140,25 @@ func (t *ZkTrie) Copy() *ZkTrie {
 	}
 }
 
-// Prove constructs a merkle proof for key. The result contains all encoded nodes
+// Prove is a simlified calling of ProveWithDeletion
+func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
+	return t.ProveWithDeletion(key, fromLevel, writeNode, nil)
+}
+
+// ProveWithDeletion constructs a merkle proof for key. The result contains all encoded nodes
 // on the path to the value at key. The value itself is also included in the last
 // node and can be retrieved by verifying the proof.
 //
 // If the trie does not contain a value for key, the returned proof contains all
 // nodes of the longest existing prefix of the key (at least the root node), ending
 // with the node that proves the absence of the key.
-func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
+//
+// If the trie contain value for key, the onHit is called BEFORE writeNode being called,
+// both the hitted leaf node and its sibling node is provided as arguments so caller
+// would receive enough information for launch a deletion and calculate the new root
+// base on the proof data
+// Also notice the sibling can be nil if the trie has only one leaf
+func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*Node) error, onHit func(*Node, *Node)) error {
 	k, err := zkt.NewHashFromCheckedBytes(key)
 	if err != nil {
 		return err
@@ -167,6 +179,37 @@ func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) 
 				// sanity check: we should stop after obtain leaf/empty
 				panic("unexpected behavior in prove")
 			}
+		}
+
+		if onHit == nil {
+			return
+		}
+
+		// check and call onhit
+		if n.Type == NodeTypeLeaf_New && bytes.Equal(n.NodeKey.Bytes(), k.Bytes()) {
+			if prev == nil {
+				// for sole element trie
+				onHit(n, nil)
+			} else {
+				var sibling, nHash *zkt.Hash
+				nHash, err = n.NodeHash()
+				if err != nil {
+					return
+				}
+
+				if bytes.Equal(nHash.Bytes(), prev.ChildL.Bytes()) {
+					sibling = prev.ChildR
+				} else {
+					sibling = prev.ChildL
+				}
+
+				if siblingNode, err := t.tree.GetNode(sibling); err == nil {
+					onHit(n, siblingNode)
+				} else {
+					onHit(n, nil)
+				}
+			}
+
 		}
 		return
 	})

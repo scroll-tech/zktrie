@@ -2,6 +2,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
@@ -31,12 +32,20 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 
 	path := getPath(mt.maxLevels, kHash[:])
 	var nodes []*Node
+	var lastN *Node
 	tn := mt.rootHash
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(tn)
 		if err != nil {
+			fmt.Println("get node fail", err, tn.Hex(),
+				lastN.ChildL.Hex(),
+				lastN.ChildR.Hex(),
+				path,
+				i,
+			)
 			return err
 		}
+		lastN = n
 
 		finished := true
 		switch n.Type {
