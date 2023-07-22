@@ -299,6 +299,7 @@ impl ZkTrie {
 }
 
 #[cfg(test)]
+#[cfg(feature = "dual_codehash")]
 mod tests {
 
     use super::*;
