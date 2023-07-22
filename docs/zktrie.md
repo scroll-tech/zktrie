@@ -60,7 +60,7 @@ leafNodeHash = h(h(1, nodeKey), valueHash)
 The leaf node can hold two types of values: Ethereum accounts and storage key-value pairs. Next, we will describe how the node key and value hash are computed for each leaf node type.
 
 #### Ethereum Account Leaf Node
-For an Ethereum Account Leaf Node, it consists of an Etherum address and a state account struct. The secure key is derived from the Ethereum address.
+For an Ethereum Account Leaf Node, it consists of an Ethereum address and a state account struct. The secure key is derived from the Ethereum address.
 ```
 address[0:20] (20 bytes in big-endian)
 valHi = address[0:16]
