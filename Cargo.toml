@@ -24,3 +24,4 @@ halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scr
 
 [features]
 dual_codehash = []
+default = ["dual_codehash"]

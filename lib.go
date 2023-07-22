@@ -9,7 +9,7 @@ typedef void (*proveWriteF)(unsigned char*, int, void*);
 
 extern hashF hash_scheme;
 
-char* bridge_hash(unsigned char* a, unsigned char* b, unsigned char* out);
+char* bridge_hash(unsigned char* a, unsigned char* b, unsigned char* domain, unsigned char* out);
 void init_hash_scheme(hashF f);
 void bridge_prove_write(proveWriteF f, unsigned char* key, unsigned char* val, int size, void* param);
 
@@ -34,13 +34,15 @@ func hash_external(inp []*big.Int, domain *big.Int) (*big.Int, error) {
 	}
 	a := zkt.ReverseByteOrder(inp[0].Bytes())
 	b := zkt.ReverseByteOrder(inp[1].Bytes())
+	dm := zkt.ReverseByteOrder(domain.Bytes())
 
 	a = append(a, zeros[0:(32-len(a))]...)
 	b = append(b, zeros[0:(32-len(b))]...)
+	dm = append(dm, zeros[0:(32-len(dm))]...)
 
 	c := make([]byte, 32)
 
-	err := C.bridge_hash((*C.uchar)(&a[0]), (*C.uchar)(&b[0]), (*C.uchar)(&c[0]))
+	err := C.bridge_hash((*C.uchar)(&a[0]), (*C.uchar)(&b[0]), (*C.uchar)(&dm[0]), (*C.uchar)(&c[0]))
 
 	if err != nil {
 		return big.NewInt(0), errors.New(C.GoString(err))
@@ -58,6 +60,15 @@ func TestHashScheme() {
 	expected := big.NewInt(0)
 	expected.UnmarshalText([]byte("7853200120776062878684798364095072458815029376092732009249414926327459813530"))
 	if h1.Cmp(expected) != 0 {
+		panic(fmt.Errorf("unexpected poseidon hash value: %s", h1))
+	}
+
+	h2, err := hash_external([]*big.Int{big.NewInt(1), big.NewInt(2)}, big.NewInt(256))
+	if err != nil {
+		panic(err)
+	}
+	expected.UnmarshalText([]byte("2362370911616048355006851495576377379220050231129891536935411970097789775493"))
+	if h2.Cmp(expected) != 0 {
 		panic(fmt.Errorf("unexpected poseidon hash value: %s", h1))
 	}
 }
@@ -107,7 +118,7 @@ func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(pN)
 	n := h.Value().(*trie.Node)
 
-	if n.Type != trie.NodeTypeEmpty_New {
+	if n.Type != trie.NodeTypeLeaf_New {
 		return nil
 	}
 
