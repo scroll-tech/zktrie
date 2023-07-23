@@ -41,7 +41,7 @@ extern "C" {
     fn FreeMemoryDb(db: *mut MemoryDb);
     fn FreeZkTrie(trie: *mut Trie);
     fn FreeBuffer(p: *const c_void);
-    fn TrieGet(trie: *const Trie, key: *const u8, key_sz: c_int) -> *const u8;
+    fn TrieGetSize(trie: *const Trie, key: *const u8, key_sz: c_int, value_sz: c_int) -> *const u8;
     fn TrieRoot(trie: *const Trie) -> *const u8;
     fn TrieUpdate(
         trie: *mut Trie,
@@ -213,7 +213,7 @@ impl ZkTrie {
 
     // all errors are reduced to "not found"
     fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
-        let ret = unsafe { TrieGet(self.trie, key.as_ptr(), key.len() as c_int) };
+        let ret = unsafe { TrieGetSize(self.trie, key.as_ptr(), key.len() as c_int, T as c_int) };
 
         if ret.is_null() {
             None
