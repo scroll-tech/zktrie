@@ -133,7 +133,7 @@ impl Drop for ZkTrieNode {
 impl ZkTrieNode {
     pub fn parse(data: &[u8]) -> Self {
         Self {
-            trie_node: unsafe { NewTrieNode(data.as_ptr(), data.len() as c_int) },
+            trie_node: unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) }
         }
     }
 
@@ -410,7 +410,7 @@ mod tests {
             "0x0900d86fc3cea9f88796671391157d8433f92be74473b01876ef9b6a75632c225d159af6801572801dfd6e17b00de85fcf0dae392c520440b763ecfc3936970af5",
             "0x0911b101680f5f11b4cccdcde4115c3f8e8af523fa76dd52de98c468cc0502dd642fd7d2a38e36d5a616485e21c93edb5798618e0e0e2003b979d05a94b29b2b29",
             "0x070000000000000000000000000000000000000000000000000000000000000000240aaaaee47745183d4820fe7384efe4a3fb93461aecea38b0a7d7bee64784a5",
-            "0x05",            
+            "0x05",
     ];
 
     #[test]
