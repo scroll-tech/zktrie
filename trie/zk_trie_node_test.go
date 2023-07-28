@@ -51,7 +51,6 @@ func TestNewNode(t *testing.T) {
 
 		hash, err := node.NodeHash()
 		assert.NoError(t, err)
-		assert.NotEqual(t, "11aa224cb5278ea18ffc32f76d8c66ce5caca2bddefb16efb5783c9c8783b0ac", hash.Hex())
 		assert.Equal(t, "11391717288411fe4c995d6e5793713939e0f59550cd4da96b419905f41d9b80", hash.Hex())
 
 		hash, err = node.ValueHash()

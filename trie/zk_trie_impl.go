@@ -231,13 +231,13 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
 		if path[lvl] { // go right
 			newNodeHash, isTerminate, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
 			if !isTerminate {
-				newNodetype = newNodetype.DeduceUpgradeType(true)
+				newNodetype = newNodetype.DeduceUpgradeType(true) // go right
 			}
 			newParentNode = NewParentNode(newNodetype, n.ChildL, newNodeHash)
 		} else { // go left
 			newNodeHash, isTerminate, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
 			if !isTerminate {
-				newNodetype = newNodetype.DeduceUpgradeType(false)
+				newNodetype = newNodetype.DeduceUpgradeType(false) // go left
 			}
 			newParentNode = NewParentNode(newNodetype, newNodeHash, n.ChildR)
 		}
@@ -462,7 +462,7 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, pathTypes []NodeType, nodeKey *zk
 		return
 	}
 
-	if len(siblings) == 1 { //nolint:gomnd
+	if len(siblings) == 1 {
 		finalRoot = siblings[0]
 		return
 	}
@@ -471,7 +471,7 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, pathTypes []NodeType, nodeKey *zk
 
 	for i := len(siblings) - 2; i >= 0; i-- { //nolint:gomnd
 		if !bytes.Equal(siblings[i][:], zkt.HashZero[:]) {
-			newNodeType := pathTypes[i].DeduceDowngradeType(path[i])
+			newNodeType := pathTypes[i].DeduceDowngradeType(path[i]) // atRight = path[i]
 			var newNode *Node
 			if path[i] {
 				newNode = NewParentNode(newNodeType, siblings[i], toUpload)
