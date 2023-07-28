@@ -4,19 +4,20 @@ import (
 	"math/big"
 )
 
-// HashElems performs a recursive poseidon hash over the array of ElemBytes, each hash
-// reduce 2 fieds into one
-func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
+// HashElemsWithDomain performs a recursive poseidon hash over the array of ElemBytes, each hash
+// reduce 2 fieds into one, with a specified domain field which would be used in
+// every recursiving call
+func HashElemsWithDomain(domain, fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 
 	l := len(elems)
-	baseH, err := hashScheme([]*big.Int{fst, snd})
+	baseH, err := hashScheme([]*big.Int{fst, snd}, domain)
 	if err != nil {
 		return nil, err
 	}
 	if l == 0 {
 		return NewHashFromBigInt(baseH), nil
 	} else if l == 1 {
-		return HashElems(baseH, elems[0])
+		return HashElemsWithDomain(domain, baseH, elems[0])
 	}
 
 	tmp := make([]*big.Int, (l+1)/2)
@@ -24,7 +25,7 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 		if (i+1)*2 > l {
 			tmp[i] = elems[i*2]
 		} else {
-			h, err := hashScheme(elems[i*2 : (i+1)*2])
+			h, err := hashScheme(elems[i*2:(i+1)*2], domain)
 			if err != nil {
 				return nil, err
 			}
@@ -32,12 +33,19 @@ func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
 		}
 	}
 
-	return HashElems(baseH, tmp[0], tmp[1:]...)
+	return HashElemsWithDomain(domain, baseH, tmp[0], tmp[1:]...)
 }
 
-// PreHandlingElems turn persisted byte32 elements into field arrays for our hashElem
-// it also has the compressed byte32
-func PreHandlingElems(flagArray uint32, elems []Byte32) (*Hash, error) {
+// HashElems call HashElemsWithDomain with a domain of HASH_DOMAIN_ELEMS_BASE(256)*<element counts>
+func HashElems(fst, snd *big.Int, elems ...*big.Int) (*Hash, error) {
+
+	return HashElemsWithDomain(big.NewInt(int64(len(elems)*HASH_DOMAIN_ELEMS_BASE)+HASH_DOMAIN_BYTE32),
+		fst, snd, elems...)
+}
+
+// HandlingElemsAndByte32 hash an arry mixed with field and byte32 elements, turn each byte32 into
+// field elements first then calculate the hash with HashElems
+func HandlingElemsAndByte32(flagArray uint32, elems []Byte32) (*Hash, error) {
 
 	ret := make([]*big.Int, len(elems))
 	var err error

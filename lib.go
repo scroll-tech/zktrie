@@ -9,7 +9,7 @@ typedef void (*proveWriteF)(unsigned char*, int, void*);
 
 extern hashF hash_scheme;
 
-char* bridge_hash(unsigned char* a, unsigned char* b, unsigned char* out);
+char* bridge_hash(unsigned char* a, unsigned char* b, unsigned char* domain, unsigned char* out);
 void init_hash_scheme(hashF f);
 void bridge_prove_write(proveWriteF f, unsigned char* key, unsigned char* val, int size, void* param);
 
@@ -28,19 +28,21 @@ import (
 
 var zeros = [32]byte{}
 
-func hash_external(inp []*big.Int) (*big.Int, error) {
+func hash_external(inp []*big.Int, domain *big.Int) (*big.Int, error) {
 	if len(inp) != 2 {
 		return big.NewInt(0), errors.New("invalid input size")
 	}
 	a := zkt.ReverseByteOrder(inp[0].Bytes())
 	b := zkt.ReverseByteOrder(inp[1].Bytes())
+	dm := zkt.ReverseByteOrder(domain.Bytes())
 
 	a = append(a, zeros[0:(32-len(a))]...)
 	b = append(b, zeros[0:(32-len(b))]...)
+	dm = append(dm, zeros[0:(32-len(dm))]...)
 
 	c := make([]byte, 32)
 
-	err := C.bridge_hash((*C.uchar)(&a[0]), (*C.uchar)(&b[0]), (*C.uchar)(&c[0]))
+	err := C.bridge_hash((*C.uchar)(&a[0]), (*C.uchar)(&b[0]), (*C.uchar)(&dm[0]), (*C.uchar)(&c[0]))
 
 	if err != nil {
 		return big.NewInt(0), errors.New(C.GoString(err))
@@ -51,7 +53,7 @@ func hash_external(inp []*big.Int) (*big.Int, error) {
 
 //export TestHashScheme
 func TestHashScheme() {
-	h1, err := hash_external([]*big.Int{big.NewInt(1), big.NewInt(2)})
+	h1, err := hash_external([]*big.Int{big.NewInt(1), big.NewInt(2)}, big.NewInt(0))
 	if err != nil {
 		panic(err)
 	}
@@ -60,9 +62,19 @@ func TestHashScheme() {
 	if h1.Cmp(expected) != 0 {
 		panic(fmt.Errorf("unexpected poseidon hash value: %s", h1))
 	}
+
+	h2, err := hash_external([]*big.Int{big.NewInt(1), big.NewInt(2)}, big.NewInt(256))
+	if err != nil {
+		panic(err)
+	}
+	expected.UnmarshalText([]byte("2362370911616048355006851495576377379220050231129891536935411970097789775493"))
+	if h2.Cmp(expected) != 0 {
+		panic(fmt.Errorf("unexpected poseidon hash value: %s", h1))
+	}
 }
 
 // notice the function must use C calling convention
+//
 //export InitHashScheme
 func InitHashScheme(f unsafe.Pointer) {
 	hash_f := C.hashF(f)
@@ -71,6 +83,7 @@ func InitHashScheme(f unsafe.Pointer) {
 }
 
 // parse raw bytes and create the trie node
+//
 //export NewTrieNode
 func NewTrieNode(data *C.char, sz C.int) C.uintptr_t {
 	bt := C.GoBytes(unsafe.Pointer(data), sz)
@@ -88,6 +101,7 @@ func NewTrieNode(data *C.char, sz C.int) C.uintptr_t {
 }
 
 // obtain the key hash, must be free by caller
+//
 //export TrieNodeHash
 func TrieNodeHash(pN C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(pN)
@@ -98,12 +112,13 @@ func TrieNodeHash(pN C.uintptr_t) unsafe.Pointer {
 }
 
 // obtain the value hash for leaf node (must be free by caller), or nil for other
+//
 //export TrieLeafNodeValueHash
 func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(pN)
 	n := h.Value().(*trie.Node)
 
-	if n.Type != trie.NodeTypeLeaf {
+	if n.Type != trie.NodeTypeLeaf_New {
 		return nil
 	}
 
@@ -112,10 +127,12 @@ func TrieLeafNodeValueHash(pN C.uintptr_t) unsafe.Pointer {
 }
 
 // free created trie node
+//
 //export FreeTrieNode
 func FreeTrieNode(p C.uintptr_t) { freeObject(p) }
 
 // create memory db
+//
 //export NewMemoryDb
 func NewMemoryDb() C.uintptr_t {
 	// it break the cgo's enforcement (C code can not store Go pointer after return)
@@ -131,20 +148,24 @@ func freeObject(p C.uintptr_t) {
 }
 
 // free created memory db
+//
 //export FreeMemoryDb
 func FreeMemoryDb(p C.uintptr_t) { freeObject(p) }
 
 // free created trie
+//
 //export FreeZkTrie
 func FreeZkTrie(p C.uintptr_t) { freeObject(p) }
 
 // free buffers being returned, like error strings or trie value
+//
 //export FreeBuffer
 func FreeBuffer(p unsafe.Pointer) {
 	C.free(p)
 }
 
 // flush db with encoded trie-node bytes
+//
 //export InitDbByNode
 func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 	h := cgo.Handle(pDb)
@@ -170,6 +191,7 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 }
 
 // the input root must be 32bytes (or more, but only first 32bytes would be recognized)
+//
 //export NewZkTrie
 func NewZkTrie(root_c *C.uchar, pDb C.uintptr_t) C.uintptr_t {
 	h := cgo.Handle(pDb)
@@ -187,6 +209,7 @@ func NewZkTrie(root_c *C.uchar, pDb C.uintptr_t) C.uintptr_t {
 // currently it is caller's responsibility to distinguish what
 // the returned buffer is byte32 or encoded account data (4x32bytes fields for original account
 // or 6x32bytes fields for 'dual-codehash' extended account)
+//
 //export TrieGet
 func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 	h := cgo.Handle(p)
@@ -207,6 +230,7 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 }
 
 // update only accept encoded buffer, and flag is derived automatically from buffer size (account data or store val)
+//
 //export TrieUpdate
 func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val_sz C.int) *C.char {
 
@@ -241,6 +265,7 @@ func TrieUpdate(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_c *C.uchar, val
 }
 
 // delete leaf, silently omit any error
+//
 //export TrieDelete
 func TrieDelete(p C.uintptr_t, key_c *C.uchar, key_sz C.int) {
 	h := cgo.Handle(p)
@@ -250,6 +275,7 @@ func TrieDelete(p C.uintptr_t, key_c *C.uchar, key_sz C.int) {
 }
 
 // output prove, only the val part is output for callback
+//
 //export TrieProve
 func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Pointer, cb_param unsafe.Pointer) *C.char {
 	h := cgo.Handle(p)
@@ -291,6 +317,7 @@ func TrieProve(p C.uintptr_t, key_c *C.uchar, key_sz C.int, callback unsafe.Poin
 }
 
 // obtain the hash
+//
 //export TrieRoot
 func TrieRoot(p C.uintptr_t) unsafe.Pointer {
 	h := cgo.Handle(p)

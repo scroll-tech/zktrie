@@ -92,7 +92,7 @@ func TestMerkleTree_Init(t *testing.T) {
 		mt2, err := NewZkTrieImplWithRoot(db, mt1.Root(), maxLevels)
 		assert.NoError(t, err)
 		assert.Equal(t, maxLevels, mt2.maxLevels)
-		assert.Equal(t, "2120d2ba46996633e29ae090371f704ae8a1fac40c782030824e93af0540e663", mt2.Root().Hex())
+		assert.Equal(t, "0539c6b1cac741eb1e98b2c271733d1e6f0fad557228f6b039d894b0a627c8d9", mt2.Root().Hex())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node does not exist", func(t *testing.T) {
@@ -454,7 +454,6 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 		assert.NoError(t, err)
 		err = mt3.DeleteWord(k3)
 		assert.NoError(t, err)
-
 		mt4 := newTestingMerkle(t, 10)
 		err = mt4.AddWord(k2, zkt.NewByte32FromBytes([]byte{2}))
 		assert.NoError(t, err)
@@ -505,10 +504,13 @@ func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 		return node, nil
 	}
 
+	for _, td := range testData {
+		err := zkTrie.AddWord(zkt.NewByte32FromBytes([]byte{byte(td.key.Int64())}), &zkt.Byte32{td.value})
+		assert.NoError(t, err)
+	}
+
 	t.Run("Test with existent key", func(t *testing.T) {
 		for _, td := range testData {
-			err := zkTrie.AddWord(zkt.NewByte32FromBytes([]byte{byte(td.key.Int64())}), &zkt.Byte32{td.value})
-			assert.NoError(t, err)
 
 			node, err := zkTrie.GetLeafNodeByWord(zkt.NewByte32FromBytes([]byte{byte(td.key.Int64())}))
 			assert.NoError(t, err)
@@ -526,13 +528,17 @@ func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 	t.Run("Test with non-existent key", func(t *testing.T) {
 		proof, node, err := BuildZkTrieProof(zkTrie.rootHash, nonExistentKey, 10, getNode)
 		assert.NoError(t, err)
-
+		assert.False(t, proof.Existence)
 		valid := VerifyProofZkTrie(zkTrie.rootHash, proof, node)
+		assert.True(t, valid)
+		nodeAnother, err := zkTrie.GetLeafNodeByWord(zkt.NewByte32FromBytes([]byte{byte(big.NewInt(1).Int64())}))
+		assert.NoError(t, err)
+		valid = VerifyProofZkTrie(zkTrie.rootHash, proof, nodeAnother)
 		assert.False(t, valid)
 
-		hash, err := proof.Verify(node.nodeHash, node.NodeKey)
-		assert.Error(t, err)
-		assert.Nil(t, hash)
+		hash, err := proof.Verify(node.nodeHash)
+		assert.NoError(t, err)
+		assert.Equal(t, hash[:], zkTrie.rootHash[:])
 	})
 }
 
@@ -554,6 +560,6 @@ func TestMerkleTree_GraphViz(t *testing.T) {
 
 	err = mt.GraphViz(&buffer, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, "--------\nGraphViz of the ZkTrieImpl with RootHash 4467834053890953620178129130613022752584671477523987938903027600190138488269\ndigraph hierarchy {\nnode [fontname=Monospace,fontsize=10,shape=box]\n\"44678340...\" -> {\"empty0\" \"63478298...\"}\n\"empty0\" [style=dashed,label=0];\n\"63478298...\" -> {\"14984317...\" \"12008367...\"}\n\"14984317...\" [style=filled];\n\"12008367...\" [style=filled];\n}\nEnd of GraphViz of the ZkTrieImpl with RootHash 4467834053890953620178129130613022752584671477523987938903027600190138488269\n--------\n", buffer.String())
+	assert.Equal(t, "--------\nGraphViz of the ZkTrieImpl with RootHash 18814328259272153650095812929528579893472885385393031263032639585810677019057\ndigraph hierarchy {\nnode [fontname=Monospace,fontsize=10,shape=box]\n\"18814328...\" -> {\"empty0\" \"36062889...\"}\n\"empty0\" [style=dashed,label=0];\n\"36062889...\" -> {\"23636458...\" \"20814118...\"}\n\"23636458...\" [style=filled];\n\"20814118...\" [style=filled];\n}\nEnd of GraphViz of the ZkTrieImpl with RootHash 18814328259272153650095812929528579893472885385393031263032639585810677019057\n--------\n", buffer.String())
 	buffer.Reset()
 }

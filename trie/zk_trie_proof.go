@@ -2,6 +2,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
@@ -31,26 +32,36 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 
 	path := getPath(mt.maxLevels, kHash[:])
 	var nodes []*Node
+	var lastN *Node
 	tn := mt.rootHash
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(tn)
 		if err != nil {
+			fmt.Println("get node fail", err, tn.Hex(),
+				lastN.ChildL.Hex(),
+				lastN.ChildR.Hex(),
+				path,
+				i,
+			)
 			return err
 		}
+		lastN = n
 
 		finished := true
 		switch n.Type {
-		case NodeTypeEmpty:
-		case NodeTypeLeaf:
+		case NodeTypeEmpty_New:
+		case NodeTypeLeaf_New:
 			// notice even we found a leaf whose entry didn't match the expected k,
 			// we still include it as the proof of absence
-		case NodeTypeParent:
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			finished = false
 			if path[i] {
 				tn = n.ChildR
 			} else {
 				tn = n.ChildL
 			}
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter deprecated node types")
 		default:
 			return ErrInvalidNodeFound
 		}

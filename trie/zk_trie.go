@@ -173,7 +173,9 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 		}()
 
 		if prev != nil {
-			if prev.Type != NodeTypeParent {
+			switch prev.Type {
+			case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
+			default:
 				// sanity check: we should stop after obtain leaf/empty
 				panic("unexpected behavior in prove")
 			}
@@ -184,7 +186,7 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 		}
 
 		// check and call onhit
-		if n.Type == NodeTypeLeaf && bytes.Equal(n.NodeKey.Bytes(), k.Bytes()) {
+		if n.Type == NodeTypeLeaf_New && bytes.Equal(n.NodeKey.Bytes(), k.Bytes()) {
 			if prev == nil {
 				// for sole element trie
 				onHit(n, nil)
@@ -209,7 +211,6 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 			}
 
 		}
-
 		return
 	})
 }

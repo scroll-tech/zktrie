@@ -1,7 +1,6 @@
 package trie
 
 import (
-	"fmt"
 	"math/big"
 	"os"
 	"testing"
@@ -11,21 +10,16 @@ import (
 )
 
 func setupENV() {
-	zkt.InitHashScheme(func(arr []*big.Int) (*big.Int, error) {
+	zkt.InitHashScheme(func(arr []*big.Int, domain *big.Int) (*big.Int, error) {
 		lcEff := big.NewInt(65536)
-		qString := "21888242871839275222246405745257275088548364400416034343698204186575808495617"
-		Q, ok := new(big.Int).SetString(qString, 10)
-		if !ok {
-			panic(fmt.Sprintf("Bad base 10 string %s", qString))
-		}
-		sum := big.NewInt(0)
+		sum := domain
 		for _, bi := range arr {
 			nbi := new(big.Int).Mul(bi, bi)
 			sum = sum.Mul(sum, sum)
 			sum = sum.Mul(sum, lcEff)
 			sum = sum.Add(sum, nbi)
 		}
-		return sum.Mod(sum, Q), nil
+		return sum.Mod(sum, zkt.Q), nil
 	})
 }
 
@@ -61,7 +55,7 @@ func TestZkTrie_GetUpdateDelete(t *testing.T) {
 
 	err = zkTrie.TryUpdate([]byte("key"), 1, []zkt.Byte32{{1}})
 	assert.NoError(t, err)
-	assert.Equal(t, []byte{0x30, 0x1b, 0x5e, 0x80, 0x74, 0x88, 0xfb, 0xe2, 0x43, 0x82, 0x92, 0x51, 0xe4, 0xae, 0xd9, 0x9a, 0xc3, 0xd6, 0x4, 0x90, 0xc1, 0x30, 0x14, 0x88, 0x97, 0xde, 0x59, 0x4c, 0xfb, 0x75, 0xca, 0x3e}, zkTrie.Hash())
+	assert.Equal(t, []byte{0x23, 0x36, 0x5e, 0xbd, 0x71, 0xa7, 0xad, 0x35, 0x65, 0xdd, 0x24, 0x88, 0x47, 0xca, 0xe8, 0xe8, 0x8, 0x21, 0x15, 0x62, 0xc6, 0x83, 0xdb, 0x8, 0x4f, 0x5a, 0xfb, 0xd1, 0xb0, 0x3d, 0x4c, 0xb5}, zkTrie.Hash())
 
 	val, err = zkTrie.TryGet([]byte("key"))
 	assert.NoError(t, err)
@@ -108,8 +102,7 @@ func TestZkTrie_ProveAndProveWithDeletion(t *testing.T) {
 			return nil
 		}
 
-		onHit := func(n *Node, sib *Node) {
-		}
+		onHit := func(n *Node, sib *Node) {}
 
 		k, err := zkt.ToSecureKey(key)
 		assert.NoError(t, err)

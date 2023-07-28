@@ -108,7 +108,7 @@ func (mt *ZkTrieImpl) TryUpdate(nodeKey *zkt.Hash, vFlag uint32, vPreimage []zkt
 		return err
 	}
 
-	newRootHash, err := mt.addLeaf(newLeafNode, mt.rootHash, 0, path, true)
+	newRootHash, _, err := mt.addLeaf(newLeafNode, mt.rootHash, 0, path, true)
 	// sanity check
 	if err == ErrEntryIndexAlreadyExists {
 		panic("Encounter unexpected errortype: ErrEntryIndexAlreadyExists")
@@ -134,14 +134,15 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	}
 	var newParentNode *Node
 	if pathNewLeaf[lvl] == pathOldLeaf[lvl] { // We need to go deeper!
+		// notice the node corresponding to return hash is always branch
 		nextNodeHash, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
 		if err != nil {
 			return nil, err
 		}
 		if pathNewLeaf[lvl] { // go right
-			newParentNode = NewParentNode(&zkt.HashZero, nextNodeHash)
+			newParentNode = NewParentNode(NodeTypeBranch_1, &zkt.HashZero, nextNodeHash)
 		} else { // go left
-			newParentNode = NewParentNode(nextNodeHash, &zkt.HashZero)
+			newParentNode = NewParentNode(NodeTypeBranch_2, nextNodeHash, &zkt.HashZero)
 		}
 		return mt.addNode(newParentNode)
 	}
@@ -155,9 +156,9 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	}
 
 	if pathNewLeaf[lvl] {
-		newParentNode = NewParentNode(oldLeafHash, newLeafHash)
+		newParentNode = NewParentNode(NodeTypeBranch_0, oldLeafHash, newLeafHash)
 	} else {
-		newParentNode = NewParentNode(newLeafHash, oldLeafHash)
+		newParentNode = NewParentNode(NodeTypeBranch_0, newLeafHash, oldLeafHash)
 	}
 	// We can add newLeaf now.  We don't need to add oldLeaf because it's
 	// already in the tree.
@@ -171,73 +172,86 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 // addLeaf recursively adds a newLeaf in the MT while updating the path, and returns the node hash
 // of the new added leaf.
 func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeHash *zkt.Hash,
-	lvl int, path []bool, forceUpdate bool) (*zkt.Hash, error) {
+	lvl int, path []bool, forceUpdate bool) (*zkt.Hash, bool, error) {
 	var err error
 	if lvl > mt.maxLevels-1 {
-		return nil, ErrReachedMaxLevel
+		return nil, false, ErrReachedMaxLevel
 	}
 	n, err := mt.GetNode(currNodeHash)
 	if err != nil {
 		//fmt.Printf("addLeaf: GetNode err %v node hash %v root %v level %v\n", err, currNodeHash, mt.rootHash, lvl)
 		//fmt.Printf("root %v\n", mt.Root())
-		return nil, err
+		return nil, false, err
 	}
 	switch n.Type {
-	case NodeTypeEmpty:
+	case NodeTypeEmpty_New:
 		// We can add newLeaf now
 		{
 			r, e := mt.addNode(newLeaf)
 			if e != nil {
 				//fmt.Println("err on NodeTypeEmpty mt.addNode ", e)
 			}
-			return r, e
+			return r, true, e
 		}
-	case NodeTypeLeaf:
+	case NodeTypeLeaf_New:
 		// Check if leaf node found contains the leaf node we are
 		// trying to add
 		if bytes.Equal(n.NodeKey[:], newLeaf.NodeKey[:]) {
 			hash, err := n.NodeHash()
 			if err != nil {
 				//fmt.Println("err on obtain key of duplicated entry", err)
-				return nil, err
+				return nil, false, err
 			}
 			if bytes.Equal(hash[:], newLeaf.nodeHash[:]) {
 				// do nothing, duplicate entry
 				// FIXME more optimization may needed here
-				return hash, nil
+				return hash, true, nil
 			} else if forceUpdate {
-				return mt.updateNode(newLeaf)
+				hash, err := mt.updateNode(newLeaf)
+				return hash, true, err
 			}
 
 			//fmt.Printf("ErrEntryIndexAlreadyExists nodeKey %v n.Nodehash() %v newLeaf.Key() %v\n",
 			//	n.NodeKey, hash, newLeaf.nodeHash)
-			return nil, ErrEntryIndexAlreadyExists
+			return nil, false, ErrEntryIndexAlreadyExists
 
 		}
 		pathOldLeaf := getPath(mt.maxLevels, n.NodeKey[:])
 		// We need to push newLeaf down until its path diverges from
 		// n's path
-		return mt.pushLeaf(newLeaf, n, lvl, path, pathOldLeaf)
-	case NodeTypeParent:
+		hash, err := mt.pushLeaf(newLeaf, n, lvl, path, pathOldLeaf)
+		return hash, false, err
+	case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 		// We need to go deeper, continue traversing the tree, left or
 		// right depending on path
 		var newParentNode *Node
 		var newNodeHash *zkt.Hash
+		var isTerminate bool
+		newNodetype := n.Type
 		if path[lvl] { // go right
-			newNodeHash, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
-			newParentNode = NewParentNode(n.ChildL, newNodeHash)
+			newNodeHash, isTerminate, err = mt.addLeaf(newLeaf, n.ChildR, lvl+1, path, forceUpdate)
+			if !isTerminate {
+				newNodetype = newNodetype.DeduceUpgradeType(true) // go right
+			}
+			newParentNode = NewParentNode(newNodetype, n.ChildL, newNodeHash)
 		} else { // go left
-			newNodeHash, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
-			newParentNode = NewParentNode(newNodeHash, n.ChildR)
+			newNodeHash, isTerminate, err = mt.addLeaf(newLeaf, n.ChildL, lvl+1, path, forceUpdate)
+			if !isTerminate {
+				newNodetype = newNodetype.DeduceUpgradeType(false) // go left
+			}
+			newParentNode = NewParentNode(newNodetype, newNodeHash, n.ChildR)
 		}
 		if err != nil {
 			//fmt.Printf("addLeaf: GetNode err %v level %v\n", err, lvl)
-			return nil, err
+			return nil, false, err
 		}
 		// Update the node to reflect the modified child
-		return mt.addNode(newParentNode)
+		hash, err := mt.addNode(newParentNode)
+		return hash, false, err
+	case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+		panic("encounter unsupported deprecated node type")
 	default:
-		return nil, ErrInvalidNodeFound
+		return nil, false, ErrInvalidNodeFound
 	}
 }
 
@@ -278,7 +292,7 @@ func (mt *ZkTrieImpl) updateNode(n *Node) (*zkt.Hash, error) {
 	if !mt.writable {
 		return nil, ErrNotWritable
 	}
-	if n.Type == NodeTypeEmpty {
+	if n.Type == NodeTypeEmpty_New {
 		return n.NodeHash()
 	}
 	hash, err := n.NodeHash()
@@ -295,20 +309,34 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 	path := getPath(mt.maxLevels, nodeKey[:])
 	nextHash := mt.rootHash
 	var siblings []*zkt.Hash
+	//sanity check
+	lastNodeType := NodeTypeBranch_3
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(nextHash)
 		if err != nil {
 			return nil, nil, err
 		}
+		//sanity check
+		if i > 0 && n.IsTerminal() {
+			if lastNodeType == NodeTypeBranch_3 {
+				panic("parent node has invalid type: children are not terminal")
+			} else if path[i-1] && lastNodeType == NodeTypeBranch_1 {
+				panic("parent node has invalid type: right child is not terminal")
+			} else if !path[i-1] && lastNodeType == NodeTypeBranch_2 {
+				panic("parent node has invalid type: left child is not terminal")
+			}
+		}
+
+		lastNodeType = n.Type
 		switch n.Type {
-		case NodeTypeEmpty:
+		case NodeTypeEmpty_New:
 			return NewEmptyNode(), siblings, ErrKeyNotFound
-		case NodeTypeLeaf:
+		case NodeTypeLeaf_New:
 			if bytes.Equal(nodeKey[:], n.NodeKey[:]) {
 				return n, siblings, nil
 			}
 			return n, siblings, ErrKeyNotFound
-		case NodeTypeParent:
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			if path[i] {
 				nextHash = n.ChildR
 				siblings = append(siblings, n.ChildL)
@@ -316,6 +344,8 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 				nextHash = n.ChildL
 				siblings = append(siblings, n.ChildR)
 			}
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter deprecated node types")
 		default:
 			return nil, nil, ErrInvalidNodeFound
 		}
@@ -364,22 +394,24 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 
 	nextHash := mt.rootHash
 	siblings := []*zkt.Hash{}
+	pathTypes := []NodeType{}
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(nextHash)
 		if err != nil {
 			return err
 		}
 		switch n.Type {
-		case NodeTypeEmpty:
+		case NodeTypeEmpty_New:
 			return ErrKeyNotFound
-		case NodeTypeLeaf:
+		case NodeTypeLeaf_New:
 			if bytes.Equal(nodeKey[:], n.NodeKey[:]) {
 				// remove and go up with the sibling
-				err = mt.rmAndUpload(path, nodeKey, siblings)
+				err = mt.rmAndUpload(path, pathTypes, nodeKey, siblings)
 				return err
 			}
 			return ErrKeyNotFound
-		case NodeTypeParent:
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
+			pathTypes = append(pathTypes, n.Type)
 			if path[i] {
 				nextHash = n.ChildR
 				siblings = append(siblings, n.ChildL)
@@ -387,6 +419,8 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 				nextHash = n.ChildL
 				siblings = append(siblings, n.ChildR)
 			}
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter unsupported deprecated node type")
 		default:
 			return ErrInvalidNodeFound
 		}
@@ -397,7 +431,7 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 
 // rmAndUpload removes the key, and goes up until the root updating all the
 // nodes with the new values.
-func (mt *ZkTrieImpl) rmAndUpload(path []bool, nodeKey *zkt.Hash, siblings []*zkt.Hash) (err error) {
+func (mt *ZkTrieImpl) rmAndUpload(path []bool, pathTypes []NodeType, nodeKey *zkt.Hash, siblings []*zkt.Hash) (err error) {
 
 	var finalRoot *zkt.Hash
 	defer func() {
@@ -410,45 +444,47 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, nodeKey *zkt.Hash, siblings []*zk
 		}
 	}()
 
+	if len(pathTypes) != len(siblings) {
+		panic(fmt.Errorf("unexpected argument array len (%d) vs (%d)", len(pathTypes), len(siblings)))
+	}
+
 	// if we have no siblings, it mean the target node is the only node in trie
 	if len(siblings) == 0 {
 		finalRoot = &zkt.HashZero
 		return
 	}
 
-	toUpload := siblings[len(siblings)-1]
-	if uploadNode, getErr := mt.GetNode(toUpload); getErr != nil {
-		// fail fast here
-		err = getErr
-		// panic(fmt.Errorf("can not get deletion proof for %s, %v", toUpload.Hex(), getErr))
-		return err
-	} else if uploadNode.Type == NodeTypeParent {
-		// for parent node, simply recalc the path
-		finalRoot, err = mt.recalculatePathUntilRoot(path, NewEmptyNode(),
-			siblings)
+	if pathTypes[len(pathTypes)-1] != NodeTypeBranch_0 {
+		// for a node which is not "both terminated", simply recalc the path
+		// notice the nodetype would not change
+		finalRoot, err = mt.recalculatePathUntilRoot(path,
+			pathTypes, NewEmptyNode(), siblings)
 		return
 	}
 
-	if len(siblings) < 2 { //nolint:gomnd
+	if len(siblings) == 1 {
 		finalRoot = siblings[0]
 		return
 	}
 
+	toUpload := siblings[len(siblings)-1]
+
 	for i := len(siblings) - 2; i >= 0; i-- { //nolint:gomnd
 		if !bytes.Equal(siblings[i][:], zkt.HashZero[:]) {
+			newNodeType := pathTypes[i].DeduceDowngradeType(path[i]) // atRight = path[i]
 			var newNode *Node
 			if path[i] {
-				newNode = NewParentNode(siblings[i], toUpload)
+				newNode = NewParentNode(newNodeType, siblings[i], toUpload)
 			} else {
-				newNode = NewParentNode(toUpload, siblings[i])
+				newNode = NewParentNode(newNodeType, toUpload, siblings[i])
 			}
 			_, err = mt.addNode(newNode)
 			if err != ErrNodeKeyAlreadyExists && err != nil {
 				return err
 			}
 			// go up until the root
-			finalRoot, err = mt.recalculatePathUntilRoot(path, newNode,
-				siblings[:i])
+			finalRoot, err = mt.recalculatePathUntilRoot(path, pathTypes,
+				newNode, siblings[:i])
 			return
 		}
 	}
@@ -460,17 +496,17 @@ func (mt *ZkTrieImpl) rmAndUpload(path []bool, nodeKey *zkt.Hash, siblings []*zk
 }
 
 // recalculatePathUntilRoot recalculates the nodes until the Root
-func (mt *ZkTrieImpl) recalculatePathUntilRoot(path []bool, node *Node,
-	siblings []*zkt.Hash) (*zkt.Hash, error) {
+func (mt *ZkTrieImpl) recalculatePathUntilRoot(path []bool, pathTypes []NodeType,
+	node *Node, siblings []*zkt.Hash) (*zkt.Hash, error) {
 	for i := len(siblings) - 1; i >= 0; i-- {
 		nodeHash, err := node.NodeHash()
 		if err != nil {
 			return nil, err
 		}
 		if path[i] {
-			node = NewParentNode(siblings[i], nodeHash)
+			node = NewParentNode(pathTypes[i], siblings[i], nodeHash)
 		} else {
-			node = NewParentNode(nodeHash, siblings[i])
+			node = NewParentNode(pathTypes[i], nodeHash, siblings[i])
 		}
 		_, err = mt.addNode(node)
 		if err != ErrNodeKeyAlreadyExists && err != nil {
@@ -540,6 +576,10 @@ type Proof struct {
 	notempties [zkt.HashByteLen - proofFlagsLen]byte
 	// Siblings is a list of non-empty sibling node hashes.
 	Siblings []*zkt.Hash
+	// NodeInfos is a list of nod types along mpt path
+	NodeInfos []NodeType
+	// NodeKey record the key of node and path
+	NodeKey *zkt.Hash
 	// NodeAux contains the auxiliary information of the lowest common ancestor
 	// node in a non-existence proof.
 	NodeAux *NodeAux
@@ -552,7 +592,8 @@ func BuildZkTrieProof(rootHash *zkt.Hash, k *big.Int, lvl int, getNode func(key 
 	p := &Proof{}
 	var siblingHash *zkt.Hash
 
-	kHash := zkt.NewHashFromBigInt(k)
+	p.NodeKey = zkt.NewHashFromBigInt(k)
+	kHash := p.NodeKey
 	path := getPath(lvl, kHash[:])
 
 	nextHash := rootHash
@@ -561,18 +602,20 @@ func BuildZkTrieProof(rootHash *zkt.Hash, k *big.Int, lvl int, getNode func(key 
 		if err != nil {
 			return nil, nil, err
 		}
+		p.NodeInfos = append(p.NodeInfos, n.Type)
 		switch n.Type {
-		case NodeTypeEmpty:
+		case NodeTypeEmpty_New:
 			return p, n, nil
-		case NodeTypeLeaf:
+		case NodeTypeLeaf_New:
 			if bytes.Equal(kHash[:], n.NodeKey[:]) {
 				p.Existence = true
 				return p, n, nil
 			}
+			vHash, err := n.ValueHash()
 			// We found a leaf whose entry didn't match hIndex
-			p.NodeAux = &NodeAux{Key: n.NodeKey, Value: n.valueHash}
-			return p, n, nil
-		case NodeTypeParent:
+			p.NodeAux = &NodeAux{Key: n.NodeKey, Value: vHash}
+			return p, n, err
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			if path[p.depth] {
 				nextHash = n.ChildR
 				siblingHash = n.ChildL
@@ -580,6 +623,8 @@ func BuildZkTrieProof(rootHash *zkt.Hash, k *big.Int, lvl int, getNode func(key 
 				nextHash = n.ChildL
 				siblingHash = n.ChildR
 			}
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter deprecated node types")
 		default:
 			return nil, nil, ErrInvalidNodeFound
 		}
@@ -593,13 +638,25 @@ func BuildZkTrieProof(rootHash *zkt.Hash, k *big.Int, lvl int, getNode func(key 
 }
 
 // VerifyProof verifies the Merkle Proof for the entry and root.
+// nodeHash can be nil when try to verify a nonexistent proof
 func VerifyProofZkTrie(rootHash *zkt.Hash, proof *Proof, node *Node) bool {
-	nodeHash, err := node.NodeHash()
+	var nodeHash *zkt.Hash
+	var err error
+	if node == nil {
+		if proof.NodeAux != nil {
+			nodeHash, err = LeafHash(proof.NodeAux.Key, proof.NodeAux.Value)
+		} else {
+			nodeHash = &zkt.HashZero
+		}
+	} else {
+		nodeHash, err = node.NodeHash()
+	}
+
 	if err != nil {
 		return false
 	}
 
-	rootFromProof, err := proof.Verify(nodeHash, node.NodeKey)
+	rootFromProof, err := proof.rootFromProof(nodeHash, proof.NodeKey)
 	if err != nil {
 		return false
 	}
@@ -608,24 +665,24 @@ func VerifyProofZkTrie(rootHash *zkt.Hash, proof *Proof, node *Node) bool {
 
 // Verify the proof and calculate the root, nodeHash can be nil when try to verify
 // a nonexistent proof
-func (proof *Proof) Verify(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error) {
+func (proof *Proof) Verify(nodeHash *zkt.Hash) (*zkt.Hash, error) {
 	if proof.Existence {
 		if nodeHash == nil {
 			return nil, ErrKeyNotFound
 		}
-		return proof.rootFromProof(nodeHash, nodeKey)
+		return proof.rootFromProof(nodeHash, proof.NodeKey)
 	} else {
 		if proof.NodeAux == nil {
-			return proof.rootFromProof(&zkt.HashZero, nodeKey)
+			return proof.rootFromProof(&zkt.HashZero, proof.NodeKey)
 		} else {
-			if bytes.Equal(nodeKey[:], proof.NodeAux.Key[:]) {
+			if bytes.Equal(proof.NodeKey[:], proof.NodeAux.Key[:]) {
 				return nil, fmt.Errorf("non-existence proof being checked against hIndex equal to nodeAux")
 			}
 			midHash, err := LeafHash(proof.NodeAux.Key, proof.NodeAux.Value)
 			if err != nil {
 				return nil, err
 			}
-			return proof.rootFromProof(midHash, nodeKey)
+			return proof.rootFromProof(midHash, proof.NodeKey)
 		}
 	}
 
@@ -636,21 +693,22 @@ func (proof *Proof) rootFromProof(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error
 
 	sibIdx := len(proof.Siblings) - 1
 	path := getPath(int(proof.depth), nodeKey[:])
-	var siblingHash *zkt.Hash
 	for lvl := int(proof.depth) - 1; lvl >= 0; lvl-- {
+		var siblingHash *zkt.Hash
 		if zkt.TestBitBigEndian(proof.notempties[:], uint(lvl)) {
 			siblingHash = proof.Siblings[sibIdx]
 			sibIdx--
 		} else {
 			siblingHash = &zkt.HashZero
 		}
+		curType := proof.NodeInfos[lvl]
 		if path[lvl] {
-			nodeHash, err = NewParentNode(siblingHash, nodeHash).NodeHash()
+			nodeHash, err = NewParentNode(curType, siblingHash, nodeHash).NodeHash()
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			nodeHash, err = NewParentNode(nodeHash, siblingHash).NodeHash()
+			nodeHash, err = NewParentNode(curType, nodeHash, siblingHash).NodeHash()
 			if err != nil {
 				return nil, err
 			}
@@ -665,12 +723,9 @@ func (mt *ZkTrieImpl) walk(nodeHash *zkt.Hash, f func(*Node)) error {
 	if err != nil {
 		return err
 	}
-	switch n.Type {
-	case NodeTypeEmpty:
+	if n.IsTerminal() {
 		f(n)
-	case NodeTypeLeaf:
-		f(n)
-	case NodeTypeParent:
+	} else {
 		f(n)
 		if err := mt.walk(n.ChildL, f); err != nil {
 			return err
@@ -678,8 +733,6 @@ func (mt *ZkTrieImpl) walk(nodeHash *zkt.Hash, f func(*Node)) error {
 		if err := mt.walk(n.ChildR, f); err != nil {
 			return err
 		}
-	default:
-		return ErrInvalidNodeFound
 	}
 	return nil
 }
@@ -718,10 +771,10 @@ node [fontname=Monospace,fontsize=10,shape=box]
 			errIn = err
 		}
 		switch n.Type {
-		case NodeTypeEmpty:
-		case NodeTypeLeaf:
+		case NodeTypeEmpty_New:
+		case NodeTypeLeaf_New:
 			fmt.Fprintf(w, "\"%v\" [style=filled];\n", hash.String())
-		case NodeTypeParent:
+		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			lr := [2]string{n.ChildL.String(), n.ChildR.String()}
 			emptyNodes := ""
 			for i := range lr {
@@ -733,6 +786,8 @@ node [fontname=Monospace,fontsize=10,shape=box]
 			}
 			fmt.Fprintf(w, "\"%v\" -> {\"%v\" \"%v\"}\n", hash.String(), lr[0], lr[1])
 			fmt.Fprint(w, emptyNodes)
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter unsupported deprecated node type")
 		default:
 		}
 	})

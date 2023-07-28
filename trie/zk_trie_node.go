@@ -25,7 +25,67 @@ const (
 	// DBEntryTypeRoot indicates the type of a DB entry that indicates the
 	// current Root of a MerkleTree
 	DBEntryTypeRoot NodeType = 3
+
+	NodeTypeLeaf_New  NodeType = 4
+	NodeTypeEmpty_New NodeType = 5
+	// branch node for both child are terminal nodes
+	NodeTypeBranch_0 NodeType = 6
+	// branch node for left child is terminal node and right child is branch
+	NodeTypeBranch_1 NodeType = 7
+	// branch node for left child is branch node and right child is terminal
+	NodeTypeBranch_2 NodeType = 8
+	// branch node for both child are branch nodes
+	NodeTypeBranch_3 NodeType = 9
 )
+
+// DeduceUploadType deduce a new branch type from current branch when one of its child become non-terminal
+func (n NodeType) DeduceUpgradeType(goRight bool) NodeType {
+	if goRight {
+		switch n {
+		case NodeTypeBranch_0:
+			return NodeTypeBranch_1
+		case NodeTypeBranch_1:
+			return n
+		case NodeTypeBranch_2, NodeTypeBranch_3:
+			return NodeTypeBranch_3
+		}
+	} else {
+		switch n {
+		case NodeTypeBranch_0:
+			return NodeTypeBranch_2
+		case NodeTypeBranch_1, NodeTypeBranch_3:
+			return NodeTypeBranch_3
+		case NodeTypeBranch_2:
+			return n
+		}
+	}
+
+	panic(fmt.Errorf("invalid NodeType: %d", n))
+}
+
+// DeduceDowngradeType deduce a new branch type from current branch when one of its child become terminal
+func (n NodeType) DeduceDowngradeType(atRight bool) NodeType {
+	if atRight {
+		switch n {
+		case NodeTypeBranch_1:
+			return NodeTypeBranch_0
+		case NodeTypeBranch_3:
+			return NodeTypeBranch_2
+		case NodeTypeBranch_0, NodeTypeBranch_2:
+			panic(fmt.Errorf("can not downgrade a node with terminal child (%d)", n))
+		}
+	} else {
+		switch n {
+		case NodeTypeBranch_3:
+			return NodeTypeBranch_1
+		case NodeTypeBranch_2:
+			return NodeTypeBranch_0
+		case NodeTypeBranch_0, NodeTypeBranch_1:
+			panic(fmt.Errorf("can not downgrade a node with terminal child (%d)", n))
+		}
+	}
+	panic(fmt.Errorf("invalid NodeType: %d", n))
+}
 
 // Node is the struct that represents a node in the MT. The node should not be
 // modified after creation because the cached key won't be updated.
@@ -54,17 +114,17 @@ type Node struct {
 
 // NewLeafNode creates a new leaf node.
 func NewLeafNode(k *zkt.Hash, valueFlags uint32, valuePreimage []zkt.Byte32) *Node {
-	return &Node{Type: NodeTypeLeaf, NodeKey: k, CompressedFlags: valueFlags, ValuePreimage: valuePreimage}
+	return &Node{Type: NodeTypeLeaf_New, NodeKey: k, CompressedFlags: valueFlags, ValuePreimage: valuePreimage}
 }
 
 // NewParentNode creates a new parent node.
-func NewParentNode(childL *zkt.Hash, childR *zkt.Hash) *Node {
-	return &Node{Type: NodeTypeParent, ChildL: childL, ChildR: childR}
+func NewParentNode(ntype NodeType, childL *zkt.Hash, childR *zkt.Hash) *Node {
+	return &Node{Type: ntype, ChildL: childL, ChildR: childR}
 }
 
 // NewEmptyNode creates a new empty node.
 func NewEmptyNode() *Node {
-	return &Node{Type: NodeTypeEmpty}
+	return &Node{Type: NodeTypeEmpty_New}
 }
 
 // NewNodeFromBytes creates a new node by parsing the input []byte.
@@ -75,13 +135,14 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 	n := Node{Type: NodeType(b[0])}
 	b = b[1:]
 	switch n.Type {
-	case NodeTypeParent:
+	case NodeTypeParent, NodeTypeBranch_0,
+		NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 		if len(b) != 2*zkt.HashByteLen {
 			return nil, ErrNodeBytesBadSize
 		}
 		n.ChildL = zkt.NewHashFromBytes(b[:zkt.HashByteLen])
 		n.ChildR = zkt.NewHashFromBytes(b[zkt.HashByteLen : zkt.HashByteLen*2])
-	case NodeTypeLeaf:
+	case NodeTypeLeaf, NodeTypeLeaf_New:
 		if len(b) < zkt.HashByteLen+4 {
 			return nil, ErrNodeBytesBadSize
 		}
@@ -107,7 +168,7 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 			n.KeyPreimage = new(zkt.Byte32)
 			copy(n.KeyPreimage[:], b[curPos:curPos+preImageSize])
 		}
-	case NodeTypeEmpty:
+	case NodeTypeEmpty, NodeTypeEmpty_New:
 		break
 	default:
 		return nil, ErrInvalidNodeFound
@@ -118,7 +179,22 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 // LeafHash computes the key of a leaf node given the hIndex and hValue of the
 // entry of the leaf.
 func LeafHash(k, v *zkt.Hash) (*zkt.Hash, error) {
-	return zkt.HashElems(big.NewInt(1), k.BigInt(), v.BigInt())
+	return zkt.HashElemsWithDomain(big.NewInt(int64(NodeTypeLeaf_New)), k.BigInt(), v.BigInt())
+}
+
+// IsTerminal returns if the node is 'terminated', i.e. empty or leaf node
+func (n *Node) IsTerminal() bool {
+	switch n.Type {
+	case NodeTypeEmpty_New, NodeTypeLeaf_New:
+		return true
+	case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
+		return false
+	case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+		panic("encounter deprecated node types")
+	default:
+		panic(fmt.Errorf("encounter unknown node types %d", n.Type))
+	}
+
 }
 
 // NodeHash computes the hash digest of the node by hashing the content in a
@@ -128,15 +204,17 @@ func (n *Node) NodeHash() (*zkt.Hash, error) {
 	if n.nodeHash == nil { // Cache the key to avoid repeated hash computations.
 		// NOTE: We are not using the type to calculate the hash!
 		switch n.Type {
-		case NodeTypeParent: // H(ChildL || ChildR)
+		case NodeTypeBranch_0,
+			NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3: // H(ChildL || ChildR)
 			var err error
-			n.nodeHash, err = zkt.HashElems(n.ChildL.BigInt(), n.ChildR.BigInt())
+			n.nodeHash, err = zkt.HashElemsWithDomain(big.NewInt(int64(n.Type)),
+				n.ChildL.BigInt(), n.ChildR.BigInt())
 			if err != nil {
 				return nil, err
 			}
-		case NodeTypeLeaf:
+		case NodeTypeLeaf_New:
 			var err error
-			n.valueHash, err = zkt.PreHandlingElems(n.CompressedFlags, n.ValuePreimage)
+			n.valueHash, err = zkt.HandlingElemsAndByte32(n.CompressedFlags, n.ValuePreimage)
 			if err != nil {
 				return nil, err
 			}
@@ -146,8 +224,10 @@ func (n *Node) NodeHash() (*zkt.Hash, error) {
 				return nil, err
 			}
 
-		case NodeTypeEmpty: // Zero
+		case NodeTypeEmpty_New: // Zero
 			n.nodeHash = &zkt.HashZero
+		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+			panic("encounter deprecated node types")
 		default:
 			n.nodeHash = &zkt.HashZero
 		}
@@ -158,7 +238,7 @@ func (n *Node) NodeHash() (*zkt.Hash, error) {
 // ValueHash computes the hash digest of the value stored in the leaf node. For
 // other node types, it returns the zero hash.
 func (n *Node) ValueHash() (*zkt.Hash, error) {
-	if n.Type != NodeTypeLeaf {
+	if n.Type != NodeTypeLeaf_New {
 		return &zkt.HashZero, nil
 	}
 	if _, err := n.NodeHash(); err != nil {
@@ -171,7 +251,7 @@ func (n *Node) ValueHash() (*zkt.Hash, error) {
 // for other node type it just return nil
 func (n *Node) Data() []byte {
 	switch n.Type {
-	case NodeTypeLeaf:
+	case NodeTypeLeaf_New:
 		var data []byte
 		hdata := (*reflect.SliceHeader)(unsafe.Pointer(&data))
 		//TODO: uintptr(reflect.ValueOf(n.ValuePreimage).UnsafePointer()) should be more elegant but only available until go 1.18
@@ -189,12 +269,12 @@ func (n *Node) Data() []byte {
 // stored in backend storage
 func (n *Node) CanonicalValue() []byte {
 	switch n.Type {
-	case NodeTypeParent: // {Type || ChildL || ChildR}
+	case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3: // {Type || ChildL || ChildR}
 		bytes := []byte{byte(n.Type)}
 		bytes = append(bytes, n.ChildL.Bytes()...)
 		bytes = append(bytes, n.ChildR.Bytes()...)
 		return bytes
-	case NodeTypeLeaf: // {Type || Data...}
+	case NodeTypeLeaf_New: // {Type || Data...}
 		bytes := []byte{byte(n.Type)}
 		bytes = append(bytes, n.NodeKey.Bytes()...)
 		tmp := make([]byte, 4)
@@ -206,8 +286,10 @@ func (n *Node) CanonicalValue() []byte {
 		}
 		bytes = append(bytes, 0)
 		return bytes
-	case NodeTypeEmpty: // { Type }
+	case NodeTypeEmpty_New: // { Type }
 		return []byte{byte(n.Type)}
+	case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+		panic("encounter deprecated node types")
 	default:
 		return []byte{}
 	}
@@ -217,7 +299,7 @@ func (n *Node) CanonicalValue() []byte {
 func (n *Node) Value() []byte {
 	outBytes := n.CanonicalValue()
 	switch n.Type {
-	case NodeTypeLeaf: // {Type || Data...}
+	case NodeTypeLeaf_New: // {Type || Data...}
 		if n.KeyPreimage != nil {
 			outBytes[len(outBytes)-1] = byte(len(n.KeyPreimage))
 			outBytes = append(outBytes, n.KeyPreimage[:]...)
@@ -230,12 +312,21 @@ func (n *Node) Value() []byte {
 // String outputs a string representation of a node (different for each type).
 func (n *Node) String() string {
 	switch n.Type {
-	case NodeTypeParent: // {Type || ChildL || ChildR}
+	// {Type || ChildL || ChildR}
+	case NodeTypeBranch_0:
+		return fmt.Sprintf("Parent L(t):%s R(t):%s", n.ChildL, n.ChildR)
+	case NodeTypeBranch_1:
+		return fmt.Sprintf("Parent L(t):%s R:%s", n.ChildL, n.ChildR)
+	case NodeTypeBranch_2:
+		return fmt.Sprintf("Parent L:%s R(t):%s", n.ChildL, n.ChildR)
+	case NodeTypeBranch_3:
 		return fmt.Sprintf("Parent L:%s R:%s", n.ChildL, n.ChildR)
-	case NodeTypeLeaf: // {Type || Data...}
+	case NodeTypeLeaf_New: // {Type || Data...}
 		return fmt.Sprintf("Leaf I:%v Items: %d, First:%v", n.NodeKey, len(n.ValuePreimage), n.ValuePreimage[0])
-	case NodeTypeEmpty: // {}
+	case NodeTypeEmpty_New: // {}
 		return "Empty"
+	case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
+		return "deprecated Node"
 	default:
 		return "Invalid Node"
 	}
