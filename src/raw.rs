@@ -1,8 +1,8 @@
-use crate::types::{Hashable, Node, NodeType, NodeType};
+use crate::db::ZktrieDatabase;
+use crate::types::{Hashable, Node, NodeType};
 use std::error::Error;
 use std::fmt::Debug;
 use std::panic;
-use num;
 use num_derive::FromPrimitive;
 use strum_macros::Display;
 use crate::types::NodeType::*;
@@ -12,7 +12,7 @@ use crate::types::NodeType::*;
 pub const PROOF_FLAGS_LEN:usize = 2;
 pub const DBKEY_ROOT_NODE:&str = "currentroot";
 
-#[derive (Copy, Clone, Debug, FromPrimitive, Display)]
+#[derive (Copy, Clone, Debug, FromPrimitive, Display, PartialEq)]
 pub enum ImplError {
     // ErrNodeKeyAlreadyExists is used when a node key already exists.
     ErrInvalidField,
@@ -41,8 +41,6 @@ pub enum ImplError {
 
 impl Error for ImplError {}
 
-trait ZktrieDatabase {}
-
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
 pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase> {
     db: DB,
@@ -61,11 +59,11 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     /// new_zktrie_implWithRoot loads a new ZkTrieImpl. If in the storage already exists one
     /// will open that one, if not, will create a new one.
     pub fn new_zktrie_impl_with_root(storage: DB, root: H, max_levels: u32) -> Result<Self, ImplError> {
-        let mut mt = ZkTrieImpl {
+        let mt = ZkTrieImpl {
             db: storage,
             max_levels,
             writable: true,
-            root_hash: root,
+            root_hash: root.clone(),
             debug: false,
         };
 
@@ -84,7 +82,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                 format!("load trie root failed hash {:?}", self.root_hash).as_str()
             );
         }
-        return self.root_hash
+        return self.root_hash.clone()
     }
 
     pub fn max_levels(&self) -> u32 {
@@ -97,17 +95,19 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         // verify that the ZkTrieImpl is writable
         if !self.writable {
             Err(ImplError::ErrNotWritable)
-        } else if !H::check_in_field(node_key.BigInt()) {
+        } else if !H::check_in_field(node_key) {
             // verify that k are valid and fit inside the Finite Field.
             Err(ImplError::ErrInvalidField)
         } else {
             let mut new_leaf_node = Node::<H>::new_leaf_node(node_key.clone(), v_flag, v_preimage);
-            let path = self.get_path(self.max_levels, node_key.clone())?;
+            let path = Self::get_path(self.max_levels, &node_key);
 
             // precalc NodeHash of new leaf here
-            new_leaf_node.node_hash()?;
+            // The following shold not fail
+            new_leaf_node.node_hash().unwrap();
 
-            let (new_root_hash, _) = self.add_leaf(&new_leaf_node, self.root_hash, 0, path, true)?;
+            let old_hash = self.root_hash.clone();
+            let (new_root_hash, _) = self.add_leaf(&mut new_leaf_node, &old_hash, 0, path, true)?;
             /* fix me: do sanity check
             if err == ErrEntryIndexAlreadyExists {
                 panic("Encounter unexpected errortype: ErrEntryIndexAlreadyExists")
@@ -116,7 +116,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             }
             */
             self.root_hash = new_root_hash;
-            self.db_insert(DBKEY_ROOT_NODE, DBEntryTypeRoot, self.root_hash.clone())?;
+            self.db_insert(&DBKEY_ROOT_NODE.as_bytes().to_vec(), DBEntryTypeRoot, &self.root_hash.to_bytes())?;
             Ok(())
         }
     }
@@ -126,33 +126,33 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     // path. pushLeaf returns the node hash of the parent of the oldLeaf and new_leaf
     pub fn push_leaf(
         &mut self,
-        new_leaf: &Node<H>,
-        old_leaf: &Node<H>,
+        new_leaf: &mut Node<H>,
+        old_leaf: &mut Node<H>,
         lvl: u32,
-        path_new_leaf: Vec<bool>,
-        path_old_leaf: Vec<bool>
+        path_new_leaf: &Vec<bool>,
+        path_old_leaf: &Vec<bool>
     ) -> Result<H, ImplError> {
         if lvl > self.max_levels-2 {
             Err(ImplError::ErrReachedMaxLevel)
         } else if path_new_leaf[lvl as usize] == path_old_leaf[lvl as usize] { // We need to go deeper!
             let next_node_hash = self.push_leaf(new_leaf, old_leaf, lvl+1, path_new_leaf, path_old_leaf)?;
-            let new_parent_node  = if path_new_leaf[lvl as usize] { // go right
+            let mut new_parent_node  = if path_new_leaf[lvl as usize] { // go right
                 Node::new_parent_node(NodeTypeBranch1, H::hash_zero(), next_node_hash)
             } else { // go left
                 Node::new_parent_node(NodeTypeBranch2, next_node_hash, H::hash_zero())
             };
-            self.add_node(&new_parent_node)
+            self.add_node(&mut new_parent_node)
         } else {
             let old_leaf_hash = old_leaf.node_hash().unwrap();
             let new_leaf_hash = new_leaf.node_hash().unwrap();
 
-            let new_parent_node = if path_new_leaf[lvl as usize] {
+            let mut new_parent_node = if path_new_leaf[lvl as usize] {
                 Node::new_parent_node(NodeTypeBranch0, old_leaf_hash, new_leaf_hash)
             } else {
                 Node::new_parent_node(NodeTypeBranch0, new_leaf_hash, old_leaf_hash)
             };
             self.add_node(new_leaf)?;
-            self.add_node(&new_parent_node)
+            self.add_node(&mut new_parent_node)
         }
     }
 
@@ -160,7 +160,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 // of the new added leaf.
     pub fn add_leaf(
         &mut self,
-        new_leaf: &Node<H>,
+        new_leaf: &mut Node<H>,
         curr_node_hash: &H,
         lvl: u32,
         path: Vec<bool>,
@@ -169,7 +169,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         if lvl > self.max_levels-1 {
             Err(ImplError::ErrReachedMaxLevel)
         } else {
-            let n = self.get_node(curr_node_hash)?;
+            let mut n = self.get_node(curr_node_hash)?;
             match n.node_type {
             NodeTypeEmptyNew => {
                 // We can add new_leaf now
@@ -186,7 +186,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                         return nil, false, err
                     }
                     */
-                    if hash == new_leaf.node_hash.unwrap() {
+                    if hash == new_leaf.node_hash.as_ref().unwrap().clone() {
                         // do nothing, duplicate entry
                         // FIXME more optimization may needed here
                         Ok((hash, true))
@@ -197,30 +197,30 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                         Err(ImplError::ErrEntryIndexAlreadyExists)
                     }
                 } else {
-                    let path_old_leaf = self.get_path(self.max_levels, n.node_key)?;
+                    let path_old_leaf = Self::get_path(self.max_levels, &n.node_key);
                     // We need to push new_leaf down until its path diverges from
                     // n's path
-                    let hash = self.push_leaf(new_leaf, &n, lvl, path, path_old_leaf)?;
+                    let hash = self.push_leaf(new_leaf, &mut n, lvl, &path, &path_old_leaf)?;
                     Ok((hash, false))
             },
             NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
                 // We need to go deeper, continue traversing the tree, left or
                 // right depending on path
                 let mut new_node_type = n.node_type;
-                let new_parent_node = if path[lvl as usize] { // go right
-                    let (new_node_hash, terminate) = self.add_leaf(new_leaf, n.child_right, lvl+1, path, force_update)?;
+                let mut new_parent_node = if path[lvl as usize] { // go right
+                    let (new_node_hash, terminate) = self.add_leaf(new_leaf, &n.child_right.unwrap(), lvl+1, path, force_update)?;
                     if !terminate {
-                        new_node_type = new_node_type.deduce_upgrade_type(true) // go right
+                        new_node_type = new_node_type.deduce_upgrade_type(true); // go right
                     }
-                    Node::new_parent_node(new_node_type, n.child_left, new_node_hash)
+                    Node::<H>::new_parent_node(new_node_type, n.child_left.unwrap(), new_node_hash)
                 } else { // go left
-                    let (new_node_hash, terminate) = self.add_leaf(new_leaf, n.child_left, lvl+1, path, force_update)?;
+                    let (new_node_hash, terminate) = self.add_leaf(new_leaf, &n.child_left.unwrap(), lvl+1, path, force_update)?;
                     if !terminate {
-                        new_node_type = new_node_type.deduce_upgrade_type(false) // go left
+                        new_node_type = new_node_type.deduce_upgrade_type(false); // go left
                     }
-                    Node::new_parent_node(new_node_type, new_node_hash, n.child_right)
+                    Node::<H>::new_parent_node(new_node_type, new_node_hash, n.child_right.unwrap())
                 };
-                let hash = self.add_node(&new_parent_node)?;
+                let hash = self.add_node(&mut new_parent_node)?;
                 Ok((hash, false))
             },
             NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent =>
@@ -233,7 +233,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 
     /// addNode adds a node : u32o the MT and returns the node hash. Empty nodes are
     /// not stored in the tree since they are all the same and assumed to always exist.
-    pub fn add_node(&mut self, n: &Node<H>) -> Result<H, ImplError> {
+    pub fn add_node(&mut self, n: &mut Node<H>) -> Result<H, ImplError> {
         // verify that the ZkTrieImpl is writable
         if !self.writable {
             Err(ImplError::ErrNotWritable)
@@ -243,18 +243,18 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             let hash = n.node_hash().unwrap();
             let v = n.canonical_value();
         // Check that the node key doesn't already exist
-            let old = self.db.Get(hash);
+            let old = self.db.get(&hash.to_bytes()).unwrap();
             old.map_or_else(
                 || {
-                    self.db.Put(hash, v);
-                    Ok(hash)
+                    self.db.put(&hash.to_bytes(), &v).unwrap();
+                    Ok(hash.clone())
                 },
                 |old_v: Vec<u8>| {
                     if !(old_v == v) {
                         Err(ImplError::ErrNodeKeyAlreadyExists)
                     } else {
                         // duplicated
-                        Ok(hash)
+                        Ok(hash.clone())
                     }
                 }
             )
@@ -263,16 +263,16 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 
 // updateNode updates an existing node in the MT.  Empty nodes are not stored
 // in the tree; they are all the same and assumed to always exist.
-    pub fn update_node(&mut self, n: &Node<H>) -> Result<H, ImplError> {
+    pub fn update_node(&mut self, n: &mut Node<H>) -> Result<H, ImplError> {
     // verify that the ZkTrieImpl is writable
         if !self.writable {
             Err(ImplError::ErrNotWritable)
         } else if n.node_type == NodeTypeEmptyNew {
-            Ok(n.node_hash().unwrap())
+            Ok(n.node_hash().unwrap().clone())
         } else {
             let hash = n.node_hash().unwrap();
             let v = n.canonical_value();
-            self.db.Put(hash, v)?;
+            self.db.put(&hash.to_bytes(), &v).unwrap();
             Ok(hash)
         }
     }
@@ -280,7 +280,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 // get_node gets a node by node hash from the MT.  Empty nodes are not stored in the
 // tree; they are all the same and assumed to always exist.
 // <del>for non exist key, return (NewEmptyNode(), nil)</del>
-    pub fn get_node(&mut self, node_hash: &H) -> Result<Node<H>, ImplError> {
+    pub fn get_node(&self, node_hash: &H) -> Result<Node<H>, ImplError> {
         todo!();
         /*
         if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
@@ -297,66 +297,62 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     }
 
     pub fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
-        let path = get_path(self.max_levels, node_key);
-        let next_hash = self.root_hash;
+        let path = Self::get_path(self.max_levels, node_key);
+        let mut next_hash = self.root_hash.clone();
         let mut siblings = vec![];
         let mut node = None;
 
     //sanity check
         let mut last_node_type = NodeTypeBranch3;
-        let sanity_check = || {
-            for i in 0..self.max_levels {
-                let n = self.get_node(&next_hash)?;
-                //sanity check
-                if i > 0 && n.is_terminal() {
-                    if last_node_type == NodeTypeBranch3 {
-                        panic!("parent node has invalid type: children are not terminal")
-                    } else if path[i-1] && last_node_type == NodeTypeBranch1 {
-                        panic!("parent node has invalid type: right child is not terminal")
-                    } else if !path[i-1] && last_node_type == NodeTypeBranch2 {
-                        panic!("parent node has invalid type: left child is not terminal")
-                    }
+        for i in 0..self.max_levels {
+            let n = self.get_node(&next_hash)?;
+            //sanity check
+            if i > 0 && n.is_terminal() {
+                if last_node_type == NodeTypeBranch3 {
+                    panic!("parent node has invalid type: children are not terminal")
+                } else if path[i as usize -1] && last_node_type == NodeTypeBranch1 {
+                    panic!("parent node has invalid type: right child is not terminal")
+                } else if !path[i as usize -1] && last_node_type == NodeTypeBranch2 {
+                    panic!("parent node has invalid type: left child is not terminal")
                 }
+            }
 
-                let last_node_type = n.node_type;
-                match n.node_type {
-                    NodeTypeEmptyNew => {
-                        node = Some(Node::<H>::new_empty_node());
+            last_node_type = n.node_type;
+            match n.node_type {
+                NodeTypeEmptyNew => {
+                    node = Some(Node::<H>::new_empty_node());
+                    Ok(())
+                },
+                NodeTypeLeafNew => {
+                    if *node_key == n.node_key {
+                        node = Some(n);
                         Ok(())
-                    },
-                    NodeTypeLeafNew => {
-                        if *node_key == n.node_key {
-                            node = Some(n);
-                            Ok(())
-                        } else {
-                            Err(ImplError::ErrKeyNotFound)
-                        }
-                    },
-                    NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
-                        if path[i] {
-                            let next_hash = n.child_right;
-                            siblings.push(n.child_left.unwrap());
-                        } else {
-                            let next_hash = n.child_left;
-                            siblings.push(n.child_right.unwrap());
-                        };
-                        Ok(())
-                    },
-                    NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent =>
-                        panic!("encounter deprecated node types"),
-                    _ => Err(ImplError::ErrInvalidNodeFound)
-                }?
-            };
-            Ok(())
+                    } else {
+                        Err(ImplError::ErrKeyNotFound)
+                    }
+                },
+                NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
+                    if path[i as usize] {
+                        next_hash = n.child_right.unwrap();
+                        siblings.push(n.child_left.unwrap());
+                    } else {
+                        next_hash = n.child_left.unwrap();
+                        siblings.push(n.child_right.unwrap());
+                    };
+                    Ok(())
+                },
+                NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent =>
+                    panic!("encounter deprecated node types"),
+                _ => Err(ImplError::ErrInvalidNodeFound)
+            }?
         };
-        sanity_check()?;
         Ok((node.unwrap(), siblings))
     }
 
     /// TryGet returns the value for key stored in the trie.
     /// The value bytes must not be modified by the caller.
     /// If a node was not found in the database, a MissingNodeError is returned.
-    pub fn try_get(&self, node_key: &H) -> Result<Option<Vec<u8>>, ImplError> {
+    pub fn try_get(&self, node_key: &H) -> Result<Node<H>, ImplError> {
         let (node, _) = self.try_get_with_path(node_key)?;
     /* FIXME: should not raise if the error is ErrKeyNotFound
     if err == ErrKeyNotFound {
@@ -366,7 +362,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         return nil, err
     }
     */
-        Ok(node.data())
+        Ok(node)
 }
 
     /// Delete removes the specified Key from the ZkTrieImpl and updates the path
@@ -387,8 +383,8 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             // verify that k is valid and fit inside the Finite Field.
             Err(ImplError::ErrInvalidField)
         } else {
-            let path = get_path(mt.max_levels, node_key)?;
-            let next_hash = self.root_hash;
+            let path = Self::get_path(self.max_levels, node_key);
+            let mut next_hash = self.root_hash.clone();
             let mut siblings = vec![];
             let mut path_types = vec![];
             let mut found = false;
@@ -399,7 +395,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                     NodeTypeLeafNew =>
                     if *node_key == n.node_key {
                         // remove and go up with the sibling
-                        self.rm_and_upload(path, path_types, node_key, siblings)?;
+                        self.rm_and_upload(path.clone(), path_types.clone(), node_key, siblings.clone())?;
                         found = true;
                         Ok(())
                     } else {
@@ -407,12 +403,12 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                     },
                     NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
                         path_types.push(n.node_type);
-                        if path[i] {
+                        if path[i as usize] {
                             next_hash = n.child_right.unwrap();
-                            siblings.push(n.child_left);
+                            siblings.push(n.child_left.unwrap());
                         } else {
                             next_hash = n.child_left.unwrap();
-                            siblings.push(n.child_right);
+                            siblings.push(n.child_right.unwrap());
                         };
                         Ok(())
                     },
@@ -432,7 +428,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 // rmAndUpload removes the key, and goes up until the root updating all the
 // nodes with the new values.
     pub fn rm_and_upload(&mut self, path: Vec<bool>, path_types: Vec<NodeType>, node_key: &H, siblings: Vec<H>) -> Result<(), ImplError> {
-        let final_root = None;
+        let mut final_root = None;
 
         if path_types.len() != siblings.len() {
             panic!("unexpected argument array len {} vs {}", path_types.len(), siblings.len())
@@ -445,101 +441,117 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         } else if *path_types.last().unwrap() != NodeTypeBranch0 {
             // for a node which is not "both terminated", simply recalc the path
             // notice the nodetype would not change
-            final_root = self.recalculate_path_until_root(
-                path,
-                path_types,
-                Node::<H>::new_empty_node(),
-                siblings
-            )?;
+            final_root = Some(self.recalculate_path_until_root(
+                &path,
+                &path_types,
+                &mut Node::<H>::new_empty_node(),
+                &siblings
+            )?);
             Ok(())
         } else if siblings.len() == 1 {
-            final_root = Some(siblings[0]);
+            final_root = Some(siblings[0].clone());
             Ok(())
         } else {
             let mut traversal = siblings.clone();
-            let mut pathdown = path.clone();
+            let mut pt_remain = path_types.clone();
+            let mut path_remain = path.clone();
+            pt_remain.pop();
+            path_remain.pop();
             traversal.reverse();
-            let mut to_upload = siblings.last().unwrap();
+            let mut remain = siblings.clone();
+            let to_upload = remain.pop().unwrap();
             for ((sib, p), ptype) in siblings.into_iter().zip(path).zip(path_types).rev().skip(1) {
                 if (final_root == None) & (sib != H::hash_zero()) {
                     let new_node_type = ptype.deduce_upgrade_type(p); // atRight = path[i]
-                    let new_node = if p {
+                    let mut new_node = if p {
                         Node::<H>::new_parent_node(new_node_type, sib, to_upload.clone())
                     } else {
                         Node::<H>::new_parent_node(new_node_type, to_upload.clone(), sib)
                     };
-                    self.add_node(&new_node).map_err(|err| {
+                    self.add_node(&mut new_node).map_or_else(|err| {
                         if err != ImplError::ErrNodeKeyAlreadyExists {
                             Err(err)
                         } else {
                             Ok(())
                         }
-                    })?;
+                    },
+                    |_| Ok(())
+                    )?;
                     // go up until the root
-                    let final_root = mt.recalculate_path_until_root(path, pathTypes,
-                        newNode, siblings[:i]);
+                    final_root = Some(self.recalculate_path_until_root(&path_remain, &pt_remain,
+                        &mut new_node, &remain)?);
                     Ok(())
                 } else {
                     Ok(())
-                }?
+                }?;
+                remain.pop();
+                pt_remain.pop();
+                path_remain.pop();
             };
             if final_root == None {
                 // if all sibling is zero, stop and store the sibling of the
                 // deleted leaf as root
-                final_root = Some(to_upload);
+                final_root = Some(to_upload.clone());
             }
             Ok(())
         }?;
         let root = final_root.expect("finalRoot is not set yet");
         self.root_hash = root;
-        self.dbInsert(DBKEY_ROOT_NODE, DBEntryTypeRoot, mt.root_hash)
-}
-
-// recalculatePathUntilRoot recalculates the nodes until the Root
-    pub fn (mt *ZkTrieImpl) recalculate_path_until_root(path Vec<bool>, pathTypes []NodeType,
-    node *Node, siblings []*zkt.Hash) (*zkt.Hash, error) {
-    for i = len(siblings) - 1; i >= 0; i-- {
-        nodeHash, err = node.NodeHash()
-        if err != nil {
-            return nil, err
-        }
-        if path[i] {
-            node = NewParentNode(pathTypes[i], siblings[i], nodeHash)
-        } else {
-            node = NewParentNode(pathTypes[i], nodeHash, siblings[i])
-        }
-        _, err = mt.add_node(node)
-        if err != ErrNodeKeyAlreadyExists && err != nil {
-            return nil, err
-        }
+        self.db_insert(&DBKEY_ROOT_NODE.as_bytes().to_vec(), DBEntryTypeRoot, &self.root_hash.to_bytes())
     }
 
-    // return last node added, which is the root
-    nodeHash, err = node.NodeHash()
-    return nodeHash, err
-}
+// recalculatePathUntilRoot recalculates the nodes until the Root
+    pub fn recalculate_path_until_root(
+        &mut self,
+        path: &Vec<bool>,
+        path_types: &Vec<NodeType>,
+        node: &mut Node<H>,
+        siblings: &Vec<H>
+    ) -> Result<H, ImplError> {
+        let mut n:Node<H> = node.clone();
+        for ((sib, p), pt) in siblings.into_iter().zip(path).zip(path_types).rev() {
+            let node_hash = n.node_hash().expect("node hash should not fail in recalculate path");
+            if *p {
+                n = Node::<H>::new_parent_node(pt.clone(), sib.clone(), node_hash);
+            } else {
+                n = Node::<H>::new_parent_node(pt.clone(), node_hash, sib.clone());
+            }
+            self.add_node(&mut n).map_or_else(|err| {
+                if err != ImplError::ErrNodeKeyAlreadyExists {
+                    Err(err)
+                } else {
+                    Ok(())
+                }
+            }, |_| {
+                Ok(())
+            })?;
+        };
+        // return last node added, which is the root
+        Ok(node.node_hash().unwrap())
+    }
 
-// dbInsert is a helper     pub fntion to insert a node : u32o a key in an open db
-// transaction.
-    pub fn (mt *ZkTrieImpl) dbInsert(k []byte, t NodeType, data []byte) error {
-    v = append([]byte{byte(t)}, data...)
-    return mt.db.Put(k, v)
-}
+    // dbInsert is a helper pub fntion to insert a node : u32o a key in an open db
+    // transaction.
+    pub fn db_insert(&mut self, k: &Vec<u8>, t: NodeType, data: &Vec<u8>) -> Result<(), ImplError> {
+        let mut v = data.clone();
+        v.insert(0, t as u8);
+        Ok(self.db.put(k, &v).unwrap())
+    }
 
-// get_leaf_node is more underlying method than TryGet, which obtain an leaf node
-// or nil if not exist
-    pub fn get_leaf_node(node_key: &H) -> Result<Node<H>, ImplError> {
-    n, _, err = mt.tryGet(node_key)
-    return n, err
-}
+    // get_leaf_node is more underlying method than TryGet, which obtain an leaf node
+    // or nil if not exist
+    pub fn get_leaf_node(&mut self, node_key: &H) -> Result<Option<Node<H>>, ImplError> {
+        Ok(self.try_get(node_key).map_or_else(|_| {None}, |c| Some(c)))
 
-// get_path returns the binary path, from the root to the leaf.
-    pub fn get_path(num_levels: u32, k []byte) -> Vec<bool> {
-        path = make(Vec<bool>, num_levels)
-        for n = 0; n < num_levels; n++ {
-            path[n] = zkt.TestBit(k[:], u: u32(n))
+    }
+
+    // get_path returns the binary path, from the root to the leaf.
+    pub fn get_path(num_levels: u32, key: &H) -> Vec<bool> {
+        let mut path = vec![];
+        for n in 0..num_levels {
+            path.push(H::test_bit(key, n as usize))
         }
-        return path
+        path
     }
 }
 

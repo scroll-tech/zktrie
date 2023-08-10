@@ -16,6 +16,9 @@ pub trait Hashable : Clone + Debug + Default + PartialEq {
     fn handling_elems_and_bytes32(flags: u32, bytes: &Vec<[u8; 32]>) -> Result<Self, ErrorCode>;
     fn hash_from_bytes(bytes: &Vec<u8>) -> Result<Self, ErrorCode>;
     fn hash_zero() -> Self;
+    fn check_in_field(hash: &Self) -> bool;
+    fn test_bit(key: &Self, pos: usize) -> bool;
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
 
@@ -94,6 +97,7 @@ impl NodeType {
 
 // Node is the struct that represents a node in the MT. The node should not be
 // modified after creation because the cached key won't be updated.
+#[derive (Clone)]
 pub struct Node<H: Hashable> {
 	// node_type is the type of node in the tree.
 	pub node_type: NodeType,
@@ -262,7 +266,7 @@ impl<H: Hashable> Node<H> {
                 _ => self.node_hash = Some(H::hash_zero())
             }
     	}
-        Ok(self.node_hash.unwrap())
+        Ok(self.node_hash.as_ref().unwrap().clone())
     }
 
     /// ValueHash computes the hash digest of the value stored in the leaf node. For
