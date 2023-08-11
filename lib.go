@@ -184,10 +184,14 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 	if err != nil {
 		return C.CString(err.Error())
 	}
-	db.Init(hash[:], n.CanonicalValue())
+
+	// use the thread-safe variant
+	err = db.Put(hash[:], n.CanonicalValue())
+	if err != nil {
+		return C.CString(err.Error())
+	}
 
 	return nil
-
 }
 
 // the input root must be 32bytes (or more, but only first 32bytes would be recognized)
