@@ -233,6 +233,29 @@ func TrieGet(p C.uintptr_t, key_c *C.uchar, key_sz C.int) unsafe.Pointer {
 	return C.CBytes(v)
 }
 
+// variant of TrieGet that specifies the expected value size for safety; if the actual value
+// size does not match the expected value size, it returns nil instead of leading to undefined
+// behavior.
+//
+//export TrieGetSize
+func TrieGetSize(p C.uintptr_t, key_c *C.uchar, key_sz C.int, val_sz C.int) unsafe.Pointer {
+	h := cgo.Handle(p)
+	tr := h.Value().(*trie.ZkTrie)
+	key := C.GoBytes(unsafe.Pointer(key_c), key_sz)
+
+	v, err := tr.TryGet(key)
+	if v == nil || err != nil {
+		return nil
+	}
+
+	// safety check
+	if len(v) != int(val_sz) {
+		return nil
+	}
+
+	return C.CBytes(v)
+}
+
 // update only accept encoded buffer, and flag is derived automatically from buffer size (account data or store val)
 //
 //export TrieUpdate
