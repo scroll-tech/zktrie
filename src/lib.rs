@@ -1,6 +1,6 @@
 use std::ffi::{self, c_char, c_int, c_void};
-use std::fmt;
 use std::marker::{PhantomData, PhantomPinned};
+use std::{fmt, rc::Rc};
 
 #[repr(C)]
 struct MemoryDb {
@@ -68,12 +68,16 @@ pub fn init_hash_scheme(f: HashScheme) {
     unsafe { InitHashScheme(f) }
 }
 
-pub struct ErrString(*const c_char);
+struct ErrStringC(*const c_char);
 
-impl Drop for ErrString {
+impl Drop for ErrStringC {
     fn drop(&mut self) {
         unsafe { FreeBuffer(self.0.cast()) };
     }
+}
+
+pub struct ErrString {
+    str_impl: Rc<ErrStringC>,
 }
 
 impl fmt::Debug for ErrString {
@@ -84,13 +88,15 @@ impl fmt::Debug for ErrString {
 
 impl From<*const c_char> for ErrString {
     fn from(src: *const c_char) -> Self {
-        Self(src)
+        Self {
+            str_impl: Rc::new(ErrStringC(src)),
+        }
     }
 }
 
 impl ToString for ErrString {
     fn to_string(&self) -> String {
-        let ret = unsafe { ffi::CStr::from_ptr(self.0).to_str() };
+        let ret = unsafe { ffi::CStr::from_ptr(self.str_impl.0).to_str() };
         ret.map(String::from).unwrap_or_else(|_| {
             String::from("error string include invalid char and can not be displayed")
         })
@@ -131,17 +137,17 @@ impl Drop for ZkTrieNode {
 }
 
 impl ZkTrieNode {
-    pub fn parse(data: &[u8]) -> Self {
-        Self {
-            trie_node: unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) }
-        }
+    pub fn parse(data: &[u8]) -> Rc<Self> {
+        Rc::new(Self {
+            trie_node: unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) },
+        })
     }
 
-    pub fn node_hash(&self) -> Hash {
+    pub fn node_hash(self: &Rc<Self>) -> Hash {
         must_get_hash(unsafe { TrieNodeHash(self.trie_node) })
     }
 
-    pub fn value_hash(&self) -> Option<Hash> {
+    pub fn value_hash(self: &Rc<Self>) -> Option<Hash> {
         let key_p = unsafe { TrieLeafNodeValueHash(self.trie_node) };
         if key_p.is_null() {
             None
@@ -151,24 +157,27 @@ impl ZkTrieNode {
     }
 }
 
-pub struct ZkTrie {
-    trie: *mut Trie,
+struct ZkTrieC(*mut Trie);
+
+impl Drop for ZkTrieC {
+    fn drop(&mut self) {
+        unsafe { FreeZkTrie(self.0) };
+    }
 }
 
-impl Drop for ZkTrie {
-    fn drop(&mut self) {
-        unsafe { FreeZkTrie(self.trie) };
-    }
+pub struct ZkTrie {
+    trie: Rc<ZkTrieC>,
+    _binding_db: Rc<ZkMemoryDb>,
 }
 
 impl ZkMemoryDb {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self {
             db: unsafe { NewMemoryDb() },
-        }
+        })
     }
 
-    pub fn add_node_bytes(&mut self, data: &[u8]) -> Result<(), ErrString> {
+    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
         let ret_ptr = unsafe { InitDbByNode(self.db, data.as_ptr(), data.len() as c_int) };
         if ret_ptr.is_null() {
             Ok(())
@@ -178,20 +187,17 @@ impl ZkMemoryDb {
     }
 
     // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(&mut self, root: &Hash) -> Option<ZkTrie> {
+    pub fn new_trie(self: &mut Rc<Self>, root: &Hash) -> Option<ZkTrie> {
         let ret = unsafe { NewZkTrie(root.as_ptr(), self.db) };
 
         if ret.is_null() {
             None
         } else {
-            Some(ZkTrie { trie: ret })
+            Some(ZkTrie {
+                trie: Rc::new(ZkTrieC(ret)),
+                _binding_db: self.clone(),
+            })
         }
-    }
-}
-
-impl Default for ZkMemoryDb {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -208,12 +214,12 @@ impl ZkTrie {
     }
 
     pub fn root(&self) -> Hash {
-        must_get_hash(unsafe { TrieRoot(self.trie) })
+        must_get_hash(unsafe { TrieRoot(self.trie.0) })
     }
 
     // all errors are reduced to "not found"
     fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
-        let ret = unsafe { TrieGetSize(self.trie, key.as_ptr(), key.len() as c_int, T as c_int) };
+        let ret = unsafe { TrieGetSize(self.trie.0, key.as_ptr(), key.len() as c_int, T as c_int) };
 
         if ret.is_null() {
             None
@@ -241,7 +247,7 @@ impl ZkTrie {
 
         let ret_ptr = unsafe {
             TrieProve(
-                self.trie,
+                self.trie.0,
                 key.as_ptr(),
                 key.len() as c_int,
                 Self::prove_callback,
@@ -258,7 +264,7 @@ impl ZkTrie {
     fn update<const T: usize>(&mut self, key: &[u8], value: &[u8; T]) -> Result<(), ErrString> {
         let ret_ptr = unsafe {
             TrieUpdate(
-                self.trie,
+                self.trie.0,
                 key.as_ptr(),
                 key.len() as c_int,
                 value.as_ptr(),
@@ -293,7 +299,7 @@ impl ZkTrie {
 
     pub fn delete(&mut self, key: &[u8]) {
         unsafe {
-            TrieDelete(self.trie, key.as_ptr(), key.len() as c_int);
+            TrieDelete(self.trie.0, key.as_ptr(), key.len() as c_int);
         }
     }
 }

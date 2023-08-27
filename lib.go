@@ -185,12 +185,7 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 		return C.CString(err.Error())
 	}
 
-	// use the thread-safe variant
-	err = db.Put(hash[:], n.CanonicalValue())
-	if err != nil {
-		return C.CString(err.Error())
-	}
-
+	db.Init(hash[:], n.CanonicalValue())
 	return nil
 }
 
