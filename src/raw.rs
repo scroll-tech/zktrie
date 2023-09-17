@@ -14,7 +14,7 @@ pub const DBKEY_ROOT_NODE:&str = "currentroot";
 
 #[derive (Copy, Clone, Debug, FromPrimitive, Display, PartialEq)]
 pub enum ImplError {
-    // ErrNodeKeyAlreadyExists is used when a node key already exists.
+    // ErrInvalidField is key not inside the finite field.
     ErrInvalidField,
     // ErrNodeKeyAlreadyExists is used when a node key already exists.
     ErrNodeKeyAlreadyExists,
@@ -281,7 +281,19 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 // tree; they are all the same and assumed to always exist.
 // <del>for non exist key, return (NewEmptyNode(), nil)</del>
     pub fn get_node(&self, node_hash: &H) -> Result<Node<H>, ImplError> {
-        todo!();
+        if node_hash.clone() == H::hash_zero() {
+            Ok(Node::<H>::new_empty_node())
+        } else {
+            let ret = self.db.get(&node_hash.to_bytes());
+            match ret {
+                Ok(bytes) => {
+                    Node::new_node_from_bytes(bytes.unwrap())
+                },
+                Err(e) => {
+                    Err(e)
+                }
+            }
+        }
         /*
         if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
             return NewEmptyNode(), nil
@@ -427,7 +439,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 
 // rmAndUpload removes the key, and goes up until the root updating all the
 // nodes with the new values.
-    pub fn rm_and_upload(&mut self, path: Vec<bool>, path_types: Vec<NodeType>, node_key: &H, siblings: Vec<H>) -> Result<(), ImplError> {
+    pub fn rm_and_upload(&mut self, path: Vec<bool>, path_types: Vec<NodeType>, _node_key: &H, siblings: Vec<H>) -> Result<(), ImplError> {
         let mut final_root = None;
 
         if path_types.len() != siblings.len() {
