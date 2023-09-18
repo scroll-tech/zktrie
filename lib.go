@@ -111,6 +111,42 @@ func TrieNodeHash(pN C.uintptr_t) unsafe.Pointer {
 	return C.CBytes(hash.Bytes())
 }
 
+// obtain the data of node if it is leaf, must be free by caller
+// or nil for other type
+// if val_sz is not 0 and the value size is not equal to val_sz,
+// it is also return nil
+//
+//export TrieNodeData
+func TrieNodeData(pN C.uintptr_t, val_sz C.int) unsafe.Pointer {
+	h := cgo.Handle(pN)
+	n := h.Value().(*trie.Node)
+
+	if d := n.Data(); d != nil {
+		// safety check
+		if expected_sz := int(val_sz); expected_sz != 0 && len(d) != int(val_sz) {
+			return nil
+		}
+
+		return C.CBytes(d)
+	} else {
+		return nil
+	}
+}
+
+// test if the node is tip type (i.e. leaf or empty)
+//
+//export TrieNodeIsTip
+func TrieNodeIsTip(pN C.uintptr_t) C.int {
+	h := cgo.Handle(pN)
+	n := h.Value().(*trie.Node)
+
+	if n.IsTerminal() {
+		return 1
+	} else {
+		return 0
+	}
+}
+
 // obtain the value hash for leaf node (must be free by caller), or nil for other
 //
 //export TrieLeafNodeValueHash
@@ -165,6 +201,7 @@ func FreeBuffer(p unsafe.Pointer) {
 }
 
 // flush db with encoded trie-node bytes
+// used for initialize the database, in a thread-unsafe fashion
 //
 //export InitDbByNode
 func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
@@ -185,12 +222,7 @@ func InitDbByNode(pDb C.uintptr_t, data *C.uchar, sz C.int) *C.char {
 		return C.CString(err.Error())
 	}
 
-	// use the thread-safe variant
-	err = db.Put(hash[:], n.CanonicalValue())
-	if err != nil {
-		return C.CString(err.Error())
-	}
-
+	db.Init(hash[:], n.CanonicalValue())
 	return nil
 }
 

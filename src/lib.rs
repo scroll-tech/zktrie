@@ -1,6 +1,6 @@
 use std::ffi::{self, c_char, c_int, c_void};
-use std::fmt;
 use std::marker::{PhantomData, PhantomPinned};
+use std::{fmt, rc::Rc};
 
 #[repr(C)]
 struct MemoryDb {
@@ -62,6 +62,8 @@ extern "C" {
     fn FreeTrieNode(node: *const TrieNode);
     fn TrieNodeHash(node: *const TrieNode) -> *const u8;
     fn TrieLeafNodeValueHash(node: *const TrieNode) -> *const u8;
+    fn TrieNodeIsTip(node: *const TrieNode) -> c_int;
+    fn TrieNodeData(node: *const TrieNode, value_sz: c_int) -> *const u8;
 }
 
 pub fn init_hash_scheme(f: HashScheme) {
@@ -131,14 +133,54 @@ impl Drop for ZkTrieNode {
 }
 
 impl ZkTrieNode {
-    pub fn parse(data: &[u8]) -> Self {
-        Self {
-            trie_node: unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) }
+    pub fn parse(data: &[u8]) -> Result<Self, String> {
+        let trie_node = unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) };
+        if trie_node.is_null() {
+            Err(format!("Can not parse {data:#x?}"))
+        } else {
+            Ok(Self { trie_node })
         }
     }
 
     pub fn node_hash(&self) -> Hash {
         must_get_hash(unsafe { TrieNodeHash(self.trie_node) })
+    }
+
+    pub fn is_tip(&self) -> bool {
+        let is_tip = unsafe { TrieNodeIsTip(self.trie_node) };
+        is_tip != 0
+    }
+
+    pub fn as_account(&self) -> Option<AccountData> {
+        if self.is_tip() {
+            let ret = unsafe { TrieNodeData(self.trie_node, ACCOUNTSIZE as i32) };
+            if ret.is_null() {
+                None
+            } else {
+                let ret_byte = must_get_const_bytes(ret);
+                unsafe {
+                    Some(std::mem::transmute::<
+                        [u8; FIELDSIZE * ACCOUNTFIELDS],
+                        AccountData,
+                    >(ret_byte))
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn as_storage(&self) -> Option<StoreData> {
+        if self.is_tip() {
+            let ret = unsafe { TrieNodeData(self.trie_node, 32) };
+            if ret.is_null() {
+                None
+            } else {
+                Some(must_get_const_bytes::<32>(ret))
+            }
+        } else {
+            None
+        }
     }
 
     pub fn value_hash(&self) -> Option<Hash> {
@@ -153,6 +195,7 @@ impl ZkTrieNode {
 
 pub struct ZkTrie {
     trie: *mut Trie,
+    binding_db: Rc<ZkMemoryDb>,
 }
 
 impl Drop for ZkTrie {
@@ -161,14 +204,22 @@ impl Drop for ZkTrie {
     }
 }
 
+impl Clone for ZkTrie {
+    fn clone(&self) -> Self {
+        self.binding_db
+            .new_trie(&self.root())
+            .expect("valid under clone")
+    }
+}
+
 impl ZkMemoryDb {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self {
             db: unsafe { NewMemoryDb() },
-        }
+        })
     }
 
-    pub fn add_node_bytes(&mut self, data: &[u8]) -> Result<(), ErrString> {
+    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
         let ret_ptr = unsafe { InitDbByNode(self.db, data.as_ptr(), data.len() as c_int) };
         if ret_ptr.is_null() {
             Ok(())
@@ -178,20 +229,17 @@ impl ZkMemoryDb {
     }
 
     // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(&mut self, root: &Hash) -> Option<ZkTrie> {
+    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie> {
         let ret = unsafe { NewZkTrie(root.as_ptr(), self.db) };
 
         if ret.is_null() {
             None
         } else {
-            Some(ZkTrie { trie: ret })
+            Some(ZkTrie {
+                trie: ret,
+                binding_db: self.clone(),
+            })
         }
-    }
-}
-
-impl Default for ZkMemoryDb {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -209,6 +257,10 @@ impl ZkTrie {
 
     pub fn root(&self) -> Hash {
         must_get_hash(unsafe { TrieRoot(self.trie) })
+    }
+
+    pub fn get_db(&self) -> Rc<ZkMemoryDb> {
+        self.binding_db.clone()
     }
 
     // all errors are reduced to "not found"
@@ -418,11 +470,13 @@ mod tests {
         init_hash_scheme(hash_scheme);
 
         let nd = ZkTrieNode::parse(&hex::decode("04139a6815e4d1fb05c969e6a8036aa5cc06b88751d713326d681bd90448ea64c905080000000000000000000000000000000000000000000000000874000000000000000000000000000000000000000000000000000000000000000000000000000000002c3c54d9c8b2d411ccd6458eaea5c644392b097de2ee416f5c923f3b01c7b8b80fabb5b0f58ec2922e2969f4dadb6d1395b49ecd40feff93e01212ae848355d410e77cae1c507f967948c6cd114e74ed65f662e365c7d6993e97f78ce898252800").unwrap());
+        let nd = nd.unwrap();
         assert_eq!(
             hex::encode(nd.node_hash()),
             "301dc3e787d41a3db0710353073f18eaebab31ac37d69e25983caf72f6c08178"
         );
         let nd = ZkTrieNode::parse(&hex::decode("041822829dca763241624d1f8dd4cf59018fc5f69931d579f8e8a4c3addd6633e605080000000000000000000000000000000000000000000000000000000000000000003901ffffffffffffffffffffffffffffffffffffffffffc078f7396622d90018d50000000000000000000000000000000000000000000000000000000000000000c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4702098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864201c5a77d9fa7ef466951b2f01f724bca3a5820b63000000000000000000000000").unwrap());
+        let nd = nd.unwrap();
         assert_eq!(
             hex::encode(nd.node_hash()),
             "18a38101a2886bca1262d02a7355d693b7937833a0eb729a5612cdb9a9817fc2"
@@ -514,7 +568,7 @@ mod tests {
         assert_eq!(proof[7], hex::decode("5448495320495320534f4d45204d4147494320425954455320464f5220534d54206d3172525867503278704449").unwrap());
         assert_eq!(proof[3], hex::decode("0810b051b9facdd51b7fd1a1cf8e9a62facef17c80c7be0db1f15f3cda95982e34233b07e4b000250359a56ef55485036e6d4dbca7c71bf82812790ac3f4a5238e").unwrap());
 
-        let node = ZkTrieNode::parse(&proof[6]);
+        let node = ZkTrieNode::parse(&proof[6]).unwrap();
         assert_eq!(
             node.node_hash().as_slice(),
             hex::decode("272f093df377b234e179b70dc1a04a1543072be3c7d3a47f6e59004c84639907")
@@ -524,6 +578,12 @@ mod tests {
             node.value_hash().unwrap().as_slice(),
             hex::decode("06c7c55f4d38fa2c6f6e0e655038ae7e1b3bb9dfa8954bdec0f9708e6e6b7d72")
                 .unwrap()
+        );
+        assert!(node.is_tip());
+        assert_eq!(
+            Vec::from(node.as_account().unwrap()[1]),
+            hex::decode("01ffffffffffffffffffffffffffffffffffffffffffd5a5fa65b10989405cd7")
+                .unwrap(),
         );
 
         trie.delete(&acc_buf);
