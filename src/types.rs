@@ -1,20 +1,14 @@
-use std::error::Error;
 use std::fmt::Debug;
+use crate::raw::ImplError;
 use num_derive::FromPrimitive;
 use num;
 
-#[derive(Debug, Display)]
-pub enum ErrorCode {
-    ErrorNodeBytesBadSize,
-}
-
-impl Error for ErrorCode {}
 const HASH_BYTE_LEN: usize = 32;
 
 pub trait Hashable : Clone + Debug + Default + PartialEq {
-    fn hash_elems_with_domain(domain: u64, lbytes: &Option<Self>, rbytes: &Option<Self>) -> Result<Self, ErrorCode>;
-    fn handling_elems_and_bytes32(flags: u32, bytes: &Vec<[u8; 32]>) -> Result<Self, ErrorCode>;
-    fn hash_from_bytes(bytes: &Vec<u8>) -> Result<Self, ErrorCode>;
+    fn hash_elems_with_domain(domain: u64, lbytes: &Option<Self>, rbytes: &Option<Self>) -> Result<Self, ImplError>;
+    fn handling_elems_and_bytes32(flags: u32, bytes: &Vec<[u8; 32]>) -> Result<Self, ImplError>;
+    fn hash_from_bytes(bytes: &Vec<u8>) -> Result<Self, ImplError>;
     fn hash_zero() -> Self;
     fn check_in_field(hash: &Self) -> bool;
     fn test_bit(key: &Self, pos: usize) -> bool;
@@ -46,6 +40,8 @@ pub enum NodeType {
 	NodeTypeBranch2 = 8,
 	// branch node for both child are branch nodes
 	NodeTypeBranch3 = 9,
+    // any invalid situation
+    NodeTypeInvalid = 10,
 }
 
 use NodeType::*;
@@ -118,7 +114,7 @@ pub struct Node<H: Hashable> {
 	// valueHash is the cache of the hash of valuePreimage to avoid recalculating, only valid for leaf node
 	value_hash: Option<H>,
 	// KeyPreimage is the original key value that derives the node_key, kept here only for proof
-	key_preimage: Vec<[u8; 32]>,
+	key_preimage: Option<[u8; 32]>,
 }
 
 impl<H: Hashable> Node<H> {
@@ -133,7 +129,7 @@ impl<H: Hashable> Node<H> {
            child_right: None,
            node_hash: None,
            value_hash: None,
-           key_preimage: vec![],
+           key_preimage: None,
         }
     }
 
@@ -148,14 +144,14 @@ impl<H: Hashable> Node<H> {
            child_right: Some(child_right),
            node_hash: None,
            value_hash: None,
-           key_preimage: vec![],
+           key_preimage: None,
         }
     }
 
     /// creates a new empty node.
     pub fn new_empty_node() -> Self {
         Node {
-	       node_type: NodeType::NodeTypeEmpty,
+	       node_type: NodeType::NodeTypeEmptyNew,
            node_key: H::default(),
            compress_flags: 0,
            value_preimage: vec![],
@@ -163,65 +159,69 @@ impl<H: Hashable> Node<H> {
            child_right: None,
            node_hash: None,
            value_hash: None,
-           key_preimage: vec![],
+           key_preimage: None,
         }
     }
 
     // new_node_from_bytes creates a new node by parsing the input []byte.
-    pub fn new_node_from_bytes(b: Vec<u8>) -> Result<Node<H>, ErrorCode> {
+    pub fn new_node_from_bytes(b: Vec<u8>) -> Result<Node<H>, ImplError> {
     	if b.len() < 1 {
-    		Err(ErrorCode::ErrorNodeBytesBadSize)
+    		Err(ImplError::ErrNodeBytesBadSize)
     	} else {
             let mut node =  Node::new_empty_node();
-    	    node.node_type = num::FromPrimitive::from_u32(b[0] as u32).unwrap();
+    	    node.node_type = num::FromPrimitive::from_u32(b[0] as u32).unwrap_or(NodeTypeInvalid);
     	    let b = b[1..].to_vec();
             match node.node_type {
                 NodeTypeParent | NodeTypeBranch0 |
                 NodeTypeBranch1 |NodeTypeBranch2 | NodeTypeBranch3 => {
                     if b.len() != 2 * HASH_BYTE_LEN {
-                    	Err(ErrorCode::ErrorNodeBytesBadSize)
+                    	Err(ImplError::ErrNodeBytesBadSize)
                     } else {
                         node.child_left = Some(H::hash_from_bytes(&b[..HASH_BYTE_LEN].to_vec())?);
                         node.child_right = Some(H::hash_from_bytes(&b[HASH_BYTE_LEN..HASH_BYTE_LEN*2].to_vec())?);
                         Ok(node)
                     }
                 },
-                _ => Ok(node)
+                NodeTypeLeaf | NodeTypeLeafNew => {
+                    if b.len() < HASH_BYTE_LEN + 4 {
+                        Err(ImplError::ErrNodeBytesBadSize)
+                    } else {
+                        node.node_key = H::hash_from_bytes(&b[..HASH_BYTE_LEN].to_vec())?;
+                        let mark = u32::from_le_bytes(b[HASH_BYTE_LEN..HASH_BYTE_LEN+4].try_into().unwrap());
+                        let preimage_len = (mark & 255) as usize;
+                        node.compress_flags = mark >> 8;
+                        let mut cur_pos = HASH_BYTE_LEN + 4;
+                        if b.len() < cur_pos + preimage_len * 32 + 1 {
+                            Err(ImplError::ErrNodeBytesBadSize)
+                        } else {
+                            for i in 0..preimage_len as usize {
+                                let a = &b[i*32 + cur_pos..(i+1)*32 + cur_pos];
+                                node.value_preimage.push(a.try_into().unwrap());
+                            }
+                            cur_pos += preimage_len * 32;
+                            let preimage_size = b[cur_pos] as usize;
+                            cur_pos += 1;
+                            if preimage_size != 0 {
+                                if b.len() < cur_pos + preimage_size || preimage_size != 32 {
+                                    Err(ImplError::ErrNodeBytesBadSize)
+                                } else {
+                                    let a = &b[cur_pos..cur_pos + preimage_size];
+                                    node.key_preimage = Some(a.try_into().unwrap());
+                                    Ok(node)
+                                }
+                            } else {
+                                Ok(node)
+                            }
+                        }
+
+                    }
+                },
+                NodeTypeEmpty | NodeTypeEmptyNew => {
+                    Ok(node)
+                },
+                _ => Err(ImplError::ErrInvalidNodeFound)
 
             }
-                /*
-        	case NodeTypeLeaf, NodeTypeLeaf_New:
-        		if len(b) < HASH_BYTE_LEN+4 {
-        			return nil, ErrNodeBytesBadSize
-        		}
-        		n.node_key = H::hash_from_bytes(b[0:HASH_BYTE_LEN])
-        		mark := binary.LittleEndian.Uint32(b[HASH_BYTE_LEN : HASH_BYTE_LEN+4])
-        		preimageLen := int(mark & 255)
-        		n.CompressedFlags = mark >> 8
-        		n.ValuePreimage = make([]zkt.Byte32, preimageLen)
-        		curPos := HASH_BYTE_LEN + 4
-        		if len(b) < curPos+preimageLen*32+1 {
-        			return nil, ErrNodeBytesBadSize
-        		}
-        		for i := 0; i < preimageLen; i++ {
-        			copy(n.ValuePreimage[i][:], b[i*32+curPos:(i+1)*32+curPos])
-        		}
-        		curPos += preimageLen * 32
-        		preImageSize := int(b[curPos])
-        		curPos += 1
-        		if preImageSize != 0 {
-        			if len(b) < curPos+preImageSize {
-        				return nil, ErrNodeBytesBadSize
-        			}
-        			n.KeyPreimage = new(zkt.Byte32)
-        			copy(n.KeyPreimage[:], b[curPos:curPos+preImageSize])
-        		}
-        	case NodeTypeEmpty, NodeTypeEmpty_New:
-        		break
-        	default:
-        		return nil, ErrInvalidNodeFound
-        	}
-            */
         }
     }
     /// is_terminal returns if the node is 'terminated', i.e. empty or leaf node
@@ -237,7 +237,7 @@ impl<H: Hashable> Node<H> {
     /// NodeHash computes the hash digest of the node by hashing the content in a
     /// specific way for each type of node.  This key is used as the hash of the
     /// Merkle tree for each node.
-    pub fn node_hash(&mut self) -> Result<H, ErrorCode> {
+    pub fn node_hash(&mut self) -> Result<H, ImplError> {
     	if self.node_hash.is_none() { // Cache the key to avoid repeated hash computations.
         // NOTE: We are not using the type to calculate the hash!
             match self.node_type {
@@ -271,21 +271,21 @@ impl<H: Hashable> Node<H> {
 
     /// ValueHash computes the hash digest of the value stored in the leaf node. For
     /// other node types, it returns the zero hash.
-    pub fn value_hash(&mut self) -> Result<H, ErrorCode> {
+    pub fn value_hash(&mut self) -> Result<H, ImplError> {
         match self.node_type {
             NodeTypeLeafNew => {
-                Ok(H::hash_zero())
-            },
-            _ => {
                 self.node_hash()?;
                 Ok(self.value_hash.as_ref().unwrap().clone())
+            },
+            _ => {
+                Ok(H::hash_zero())
             }
         }
     }
 
     /// LeafHash computes the key of a leaf node given the hIndex and hValue of the
     /// entry of the leaf.
-    pub fn leaf_hash(&self, k: &Option<H>, v: &Option<H>) -> Result<H, ErrorCode> {
+    pub fn leaf_hash(&self, k: &Option<H>, v: &Option<H>) -> Result<H, ImplError> {
         H::hash_elems_with_domain(self.node_type as u64, k, v)
     }
 
@@ -307,9 +307,10 @@ impl<H: Hashable> Node<H> {
         let len = out_bytes.len();
         match self.node_type {
             NodeTypeLeafNew => {
-                if !self.key_preimage.is_empty() {
-			        out_bytes[len-1] = self.key_preimage.len() as u8;
-                    let bytes = unsafe { std::slice::from_raw_parts(self.key_preimage.as_ptr() as *const u8, self.key_preimage.len()*32) };
+                if self.key_preimage.is_some() {
+                    let key_preimage = self.key_preimage.unwrap();
+			        out_bytes[len-1] = key_preimage.len() as u8;
+                    let bytes = unsafe { std::slice::from_raw_parts(key_preimage.as_ptr() as *const u8, key_preimage.len()) };
                     out_bytes.append(&mut bytes.to_vec())
                 }
             },
@@ -322,39 +323,36 @@ impl<H: Hashable> Node<H> {
     /// from the encoding (current only KeyPreimage for Leaf node) to keep a minimum size for content being
     /// stored in backend storage
     pub fn canonical_value(&self) -> Vec<u8> {
-        todo!();
-        /*
         match self.node_type {
-        switch n.Type {
-    	case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3: // {Type || ChildL || ChildR}
-    		bytes := []byte{byte(n.Type)}
-    		bytes = append(bytes, n.ChildL.Bytes()...)
-    		bytes = append(bytes, n.ChildR.Bytes()...)
-    		return bytes
-    	case NodeTypeLeaf_New: // {Type || Data...}
-    		bytes := []byte{byte(n.Type)}
-    		bytes = append(bytes, n.node_key.Bytes()...)
-    		tmp := make([]byte, 4)
-    		compressedFlag := (n.CompressedFlags << 8) + uint32(len(n.ValuePreimage))
-    		binary.LittleEndian.PutUint32(tmp, compressedFlag)
-    		bytes = append(bytes, tmp...)
-    		for _, elm := range n.ValuePreimage {
-    			bytes = append(bytes, elm[:]...)
-    		}
-    		bytes = append(bytes, 0)
-    		return bytes
-    	case NodeTypeEmpty_New: // { Type }
-    		return []byte{byte(n.Type)}
-    	case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
-    		panic("encounter deprecated node types")
-    	default:
-    		return []byte{}
-    	}
-        */
+            NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
+                let mut b =vec![self.node_type as u8];
+                b.append(&mut self.child_left.as_ref().unwrap().to_bytes());
+                b.append(&mut self.child_right.as_ref().unwrap().to_bytes());
+                b
+            },
+            NodeTypeLeafNew => {
+                let mut b = vec![self.node_type as u8];
+                b.append(&mut self.node_key.to_bytes());
+                let mark = (self.compress_flags << 8) + self.value_preimage.len() as u32;
+                b.append(&mut u32::to_le_bytes(mark).to_vec());
+                for i in 0..self.value_preimage.len() {
+                    b.append(&mut self.value_preimage[i].to_vec());
+                }
+                b.push(0);
+                b
+            },
+            NodeTypeEmptyNew => {
+                vec![self.node_type as u8]
+            },
+            NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent => {
+                panic!("encounter deprecated node types")
+            },
+            _ => {vec![]}
+        }
     }
 
     /// String outputs a string representation of a node (different for each type).
-    pub fn to_tring(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self.node_type {
         // {Type || ChildL || ChildR}
             NodeTypeBranch0 =>
@@ -379,3 +377,189 @@ impl<H: Hashable> Node<H> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::hash::Hash;
+    use crate::raw::ImplError;
+    use crate::types::{NodeType::*, HASH_BYTE_LEN};
+    use crate::types::{Node, Hashable};
+
+    #[test]
+    fn test_new_node() {
+        //NodeTypeEmptyNew
+        let mut node1 = Node::<Hash>::new_empty_node();
+        assert_eq!(node1.node_type, NodeTypeEmptyNew);
+
+        let h = node1.node_hash();
+        assert!(h.is_ok());
+        assert_eq!(h.unwrap(), Hash::hash_zero());
+        let h = node1.value_hash();
+        assert!(h.is_ok());
+        assert_eq!(h.unwrap(), Hash::hash_zero());
+
+        //NodeTypeLeafNew
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let vp = vec![[48u8; 32]];
+        let mut node2 = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
+        assert_eq!(node2.node_type, NodeTypeLeafNew);
+        assert_eq!(node2.compress_flags, 1u32);
+        assert_eq!(node2.value_preimage, vp);
+
+        let h = node2.node_hash();
+        assert!(h.is_ok());
+        let h = node2.value_hash();
+        assert!(h.is_ok());
+
+        //New Parent Node
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let mut node3 = Node::<Hash>::new_parent_node(NodeTypeBranch3, k.clone(), k.clone());
+        assert_eq!(node3.node_type, NodeTypeBranch3);
+        assert_eq!(node3.child_left.as_ref().unwrap(), &k);
+        assert_eq!(node3.child_right.as_ref().unwrap(), &k);
+
+        let h = node3.node_hash();
+        assert!(h.is_ok());
+        let h = node3.value_hash();
+        assert!(h.is_ok());
+
+        //New Parent Node with empty child
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let r = Hash::hash_zero();
+        let mut node4 = Node::<Hash>::new_parent_node(NodeTypeBranch2, k.clone(), r.clone());
+        assert_eq!(node4.node_type, NodeTypeBranch2);
+        assert_eq!(node4.child_left.as_ref().unwrap(), &k);
+        assert_eq!(node4.child_right.as_ref().unwrap(), &r);
+
+        let h = node4.node_hash();
+        assert!(h.is_ok());
+        let h = node4.value_hash();
+        assert!(h.is_ok());
+
+    }
+
+    #[test]
+    fn test_new_node_from_bytes() {
+        //Parent Node
+        let k1 = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k2 = Hash::hash_from_bytes(&[48u8; 32].to_vec()).unwrap();
+        let mut node1 = Node::<Hash>::new_parent_node(NodeTypeBranch0, k1.clone(), k2.clone());
+        assert_eq!(node1.node_type, NodeTypeBranch0);
+        assert_eq!(node1.child_left.as_ref().unwrap(), &k1);
+        assert_eq!(node1.child_right.as_ref().unwrap(), &k2);
+
+        let h = node1.node_hash();
+        assert!(h.is_ok());
+        let h = node1.value_hash();
+        assert!(h.is_ok());
+
+        //Leaf Node
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let vp = vec![[1u8; 32]];
+        let mut node2 = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
+        let h = node2.node_hash();
+        assert!(h.is_ok());
+        let h = node2.value_hash();
+        assert!(h.is_ok());
+
+        node2.key_preimage = Some([48u8; 32]);
+        let b = node2.value();
+        let new_node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(new_node.is_ok());
+        let new_node = new_node.unwrap();
+        assert_eq!(node2.node_type, new_node.node_type);
+        assert_eq!(node2.node_key, new_node.node_key);
+        assert_eq!(node2.value_preimage, new_node.value_preimage);
+        assert_eq!(node2.key_preimage, new_node.key_preimage);
+
+        //Empty Node
+        let b =Node::<Hash>::new_empty_node().value();
+        let new_node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(new_node.is_ok());
+
+        let mut node3 = new_node.unwrap();
+        let h = node3.node_hash();
+        assert!(h.is_ok());
+        assert_eq!(h.unwrap(), Hash::hash_zero());
+        let h = node3.value_hash();
+        assert!(h.is_ok());
+        assert_eq!(h.unwrap(), Hash::hash_zero());
+
+        //Bad Size
+        let b = vec![];
+        let node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
+
+        let b = vec![0u8, 1u8, 2u8];
+        let node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
+
+        let b = vec![NodeTypeLeaf as u8; HASH_BYTE_LEN + 3];
+        let node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
+
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let vp = vec![[1u8; 32]];
+        let valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
+        let b = valid_node.value();
+        let node = Node::<Hash>::new_node_from_bytes(b[0..b.len()-32].to_vec());
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
+
+        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let vp = vec![[1u8; 32]];
+        let mut valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
+        valid_node.key_preimage = Some([48u8; 32]);
+        let b = valid_node.value();
+        let node = Node::<Hash>::new_node_from_bytes(b[0..b.len()-1].to_vec());
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
+
+        //Invalid type
+        let b = vec![255u8];
+        let node = Node::<Hash>::new_node_from_bytes(b);
+        assert!(node.is_err());
+        assert_eq!(node.err().unwrap(), ImplError::ErrInvalidNodeFound);
+    }
+
+    #[test]
+    fn test_node_value_and_data() {
+        let a1 = [47u8; 32];
+        let a2 = [48u8; 32];
+        let a3 = [49u8; 32];
+        let mark = [1u8, 1u8, 0u8, 0u8];
+        let k = Hash::hash_from_bytes(&a1.to_vec()).unwrap();
+        let vp = vec![a2.clone()];
+
+        //Leaf Node
+        let mut node = Node::<Hash>::new_leaf_node(k.clone(), 1, vp.clone());
+        let mut v = vec![4u8];
+        v.append(&mut a1.to_vec());
+        v.append(&mut mark.to_vec());
+        v.append(&mut a2.to_vec());
+        v.push(0);
+        assert_eq!(node.canonical_value(), v);
+
+        v.remove(v.len()-1);
+        node.key_preimage = Some([49u8; 32]);
+        v.push(32u8);
+        v.append(&mut a3.to_vec());
+        assert_eq!(node.value(), v);
+
+        assert_eq!(node.data().unwrap(), a2.to_vec());
+
+        //Parent Node
+        let node = Node::<Hash>::new_parent_node(NodeTypeBranch3, k.clone(), k.clone());
+        v = vec![9u8];
+        v.append(&mut a1.to_vec());
+        v.append(&mut a1.to_vec());
+        assert_eq!(node.canonical_value(), v);
+
+        //empty Node
+        let node = Node::<Hash>::new_empty_node();
+        v = vec![5u8];
+        assert_eq!(node.canonical_value(), v);
+    }
+}
