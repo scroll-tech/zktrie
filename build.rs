@@ -12,9 +12,13 @@ fn main() {
     //#[cfg(target_os = "windows")]
     let build_mode = gobuild::BuildMode::CShared;
 
+    let mut build = gobuild::Build::new();
+    if cfg!(target_os = "macos") {
+        build.ldflags("-w");
+    }
+    build.buildmode(build_mode);
     // Build
-    if let Err(e) = gobuild::Build::new()
-        .buildmode(build_mode)
+    if let Err(e) = build
         .try_compile(lib_name)
     {
         // The error type is private so have to check the error string
