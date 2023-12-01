@@ -11,7 +11,7 @@ links = "zktrie"
 [dependencies]
 
 [build-dependencies]
-gobuild = "0.1.0-alpha.1"
+gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 
 
 [dev-dependencies]
