@@ -42,6 +42,7 @@ pub enum ImplError {
 impl Error for ImplError {}
 
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
+#[derive (Clone)]
 pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase> {
     db: DB,
     root_hash: H,
@@ -294,18 +295,6 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                 }
             }
         }
-        /*
-        if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
-            return NewEmptyNode(), nil
-        }
-        nBytes, err = mt.db.Get(nodeHash[:])
-        if err == ErrKeyNotFound {
-            return nil, ErrKeyNotFound
-        } else if err != nil {
-            return nil, err
-        }
-        return NewNodeFromBytes(nBytes)
-        */
     }
 
     pub fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
