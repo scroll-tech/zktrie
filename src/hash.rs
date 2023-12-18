@@ -13,9 +13,11 @@ impl Hash {
     //todo replace with poseidon hash
     fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self{
         let mut h = Self::hash_zero();
-        h.0[0..12].copy_from_slice(&a[4..16]);
-        h.0[12..20].copy_from_slice(&u64::to_le_bytes(domain).to_vec()[..]);
-        h.0[20..32].copy_from_slice(&b[16..28]);
+        for i in 0..HASH_BYTE_LEN {
+            h.0[i] = ((a[i] as u64 + domain) * (b[i] as u64 + domain) * (i as u64)) as u8;
+            h.0[i] %= 128u8 - i as u8;
+        }
+        h.0[31] %= 48u8;
         h
     }
 
@@ -54,8 +56,13 @@ impl Hashable for Hash {
         if bytes.len() > HASH_BYTE_LEN {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
+            let padding = HASH_BYTE_LEN - bytes.len();
+            let mut b = bytes.clone();
+            for _ in 0..padding {
+                b.push(0u8);
+            }
             let mut h = Self::hash_zero();
-            h.0[0..HASH_BYTE_LEN].copy_from_slice(&bytes.to_vec()[..]);
+            h.0[0..HASH_BYTE_LEN].copy_from_slice(&b.to_vec()[..]);
             if Self::check_in_field(&h) {
                 Ok(h)
             } else {
@@ -151,7 +158,7 @@ mod tests{
     #[test]
     fn test_hash_scheme() {
         //fill poseidon hash result when move to zk
-        todo!();
+        //todo!();
     }
 }
 
