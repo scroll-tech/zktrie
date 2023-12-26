@@ -612,7 +612,24 @@ mod test {
             assert_eq!(node.value_preimage.len(), 1);
             assert_eq!(node.value_preimage[0], [20-i as u8;32]);
         }
+        let h1 = t.root();
 
+        let db = SimpleDb::new();
+        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mut t = mt.unwrap();
+        //update and get value check by reverse order
+        for i in 1..20 {
+            let h = Hash::hash_from_bytes(&[20-i as u8;1].to_vec()).unwrap();
+            let v = vec![[i as u8;32]];
+            let err = t.try_update(&h, 1, v);
+            assert_eq!(err.is_ok(), true);
+            let node = t.get_leaf_node(&h).unwrap().unwrap();
+            assert_eq!(node.value_preimage.len(), 1);
+            assert_eq!(node.value_preimage[0], [i as u8;32]);
+        }
+        let h2 = t.root();
+
+        assert_eq!(h2, h1);
         //invalid key
         let h = Hash::hash_from_bytes(&[30u8;1].to_vec()).unwrap();
         let err = t.get_leaf_node(&h).err().unwrap();
