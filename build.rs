@@ -3,6 +3,15 @@ use std::io::{self, Write};
 use std::path::Path;
 
 fn main() {
+    if let Some(target) = env::var("TARGET").ok() {
+        if target.contains("android") || target.contains("ios") {
+            println!("cargo:warning=Building for Android or iOS");
+            return;
+        }
+    } else {
+        println!("cargo:warning=Building for non-mobile platform");
+    }
+
     let lib_name = "zktrie";
     let src_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let src_dir = Path::new(src_dir.as_str());
