@@ -28,4 +28,5 @@ num-bigint = { version = "0.4", features = ["rand"] }
 num-traits = "0.2.15"
 num-derive = "0.3"
 num = "0.4"
-
+poseidon = { git = "https://github.com/lanbones/poseidon" }
+halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", default-features = true }
