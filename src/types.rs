@@ -55,6 +55,7 @@ impl NodeType {
                 NodeTypeBranch0 => NodeTypeBranch1,
                 NodeTypeBranch1 => self.clone(),
                 NodeTypeBranch2 => NodeTypeBranch3,
+                NodeTypeBranch3 => NodeTypeBranch3,
                 _ => unreachable!(),
             }
         } else {
@@ -106,7 +107,7 @@ pub struct Node<H: Hashable> {
 	// value_preimage can store at most 256 byte32 as fields (represnted by BIG-ENDIAN integer)
 	// and the first 24 can be compressed (each bytes32 consider as 2 fields), in hashing the compressed
 	// elemments would be calculated first
-	value_preimage: Vec<[u8; 32]>,
+	pub value_preimage: Vec<[u8; 32]>,
 	// use each bit for indicating the compressed flag for the first 24 fields
 	compress_flags: u32,
 	// nodeHash is the cache of the hash of the node to avoid recalculating

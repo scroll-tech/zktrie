@@ -1,6 +1,11 @@
 use crate::{types::Hashable, raw::ImplError};
+use ff::PrimeField;
+use poseidon::Poseidon;
+use halo2_proofs::pairing::bn256::Fr;
 
-
+lazy_static::lazy_static! {
+    pub static ref POSEIDON_HASHER: poseidon::Poseidon<Fr, 9, 8> = Poseidon::<Fr, 9, 8>::new(8, 63);
+}
 
 const HASH_BYTE_LEN: usize = 32;
 const HASH_DOMAIN_ELEMS_BASE: usize = 256;
@@ -12,11 +17,9 @@ pub struct Hash(pub(crate) [u8; HASH_BYTE_LEN]);
 impl Hash {
     //todo replace with poseidon hash
     fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self{
-        let mut h = Self::hash_zero();
-        h.0[0..12].copy_from_slice(&a[4..16]);
-        h.0[12..20].copy_from_slice(&u64::to_le_bytes(domain).to_vec()[..]);
-        h.0[20..32].copy_from_slice(&b[16..28]);
-        h
+        let mut hasher = POSEIDON_HASHER.clone();
+        hasher.update(&[Fr::from_repr(a.clone()).unwrap(), Fr::from_repr(b.clone()).unwrap(), Fr::from(domain)]);
+        Hash(hasher.squeeze().to_repr())
     }
 
     fn simple_hash_byte32(b: &[u8; 32]) -> Self{
@@ -27,15 +30,11 @@ impl Hash {
 
 impl Hashable for Hash {
     fn check_in_field(hash: &Self) -> bool {
-        let limit = [1u8, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129, 182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48];
-        let mut ret = false;
-        for i in 0..HASH_BYTE_LEN {
-            if hash.0[HASH_BYTE_LEN - i - 1] != limit[HASH_BYTE_LEN - i - 1] {
-                ret = hash.0[HASH_BYTE_LEN - i - 1] < limit[HASH_BYTE_LEN - i - 1];
-                break;
-            }
+        if Fr::from_repr(hash.0).is_some().into() {
+            return true
+        } else {
+            return false
         }
-        ret
     }
 
     fn test_bit(key: &Self, pos: usize) -> bool {
@@ -54,8 +53,13 @@ impl Hashable for Hash {
         if bytes.len() > HASH_BYTE_LEN {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
+            let padding = HASH_BYTE_LEN - bytes.len();
+            let mut b = bytes.clone();
+            for _ in 0..padding {
+                b.push(0u8);
+            }
             let mut h = Self::hash_zero();
-            h.0[0..HASH_BYTE_LEN].copy_from_slice(&bytes.to_vec()[..]);
+            h.0[0..HASH_BYTE_LEN].copy_from_slice(&b.to_vec()[..]);
             if Self::check_in_field(&h) {
                 Ok(h)
             } else {
@@ -151,7 +155,7 @@ mod tests{
     #[test]
     fn test_hash_scheme() {
         //fill poseidon hash result when move to zk
-        todo!();
+        //todo!();
     }
 }
 

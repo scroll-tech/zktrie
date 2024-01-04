@@ -1,4 +1,6 @@
-use crate::types;
+use crate::types::{Hashable};
+use crate::raw::{ZkTrieImpl, ImplError};
+use crate::db::ZktrieDatabase;
 
 // ZkTrie wraps a trie with key hashing. In a secure trie, all
 // access operations hash the key using keccak256. This prevents
@@ -10,184 +12,78 @@ use crate::types;
 // the preimage of each key.
 //
 // ZkTrie is not safe for concurrent use.
-type ZkTrie struct {
-	tree *ZkTrieImpl
+
+#[derive (Clone)]
+pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase> {
+	tree: ZkTrieImpl<H, DB>,
 }
 
-// NodeKeyValidBytes is the number of least significant bytes in the node key
+// NODE_KEY_VALID_BYTES is the number of least significant bytes in the node key
 // that are considered valid to addressing the leaf node, and thus limits the
-// maximum trie depth to NodeKeyValidBytes * 8.
+// maximum trie depth to NODE_KEY_VALID_BYTES * 8.
 // We need to truncate the node key because the key is the output of Poseidon
 // hash and the key space doesn't fully occupy the range of power of two. It can
 // lead to an ambiguous bit representation of the key in the finite field
 // causing a soundness issue in the zk circuit.
-const NodeKeyValidBytes = 31
+const NODE_KEY_VALID_BYTES: u32 = 31;
 
-// NewSecure creates a trie
-// SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
-// underlying diskdb
-func NewZkTrie(root zkt.Byte32, db ZktrieDatabase) (*ZkTrie, error) {
-	maxLevels := NodeKeyValidBytes * 8
-	tree, err := NewZkTrieImplWithRoot((db), zkt.NewHashFromBytes(root.Bytes()), maxLevels)
-	if err != nil {
-		return nil, err
-	}
-	return &ZkTrie{
-		tree: tree,
-	}, nil
-}
-
-// TryGet returns the value for key stored in the trie.
-// The value bytes must not be modified by the caller.
-// If a node was not found in the database, a MissingNodeError is returned.
-func (t *ZkTrie) TryGet(key []byte) ([]byte, error) {
-	k, err := zkt.ToSecureKey(key)
-	if err != nil {
-		return nil, err
+impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
+	// NewSecure creates a trie
+	// SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
+	// underlying diskdb
+	pub fn new_zktrie(root: H, db: DB) -> Result<Self, ImplError> {
+		let max_levels = NODE_KEY_VALID_BYTES * 8;
+		let tr = ZkTrieImpl::new_zktrie_impl_with_root(db, root, max_levels);
+		let t = ZkTrie {
+			tree: tr?,
+		};
+		Ok(t)
 	}
 
-	return t.tree.TryGet(zkt.NewHashFromBigInt(k))
-}
-
-// Tree exposed underlying ZkTrieImpl
-func (t *ZkTrie) Tree() *ZkTrieImpl {
-	return t.tree
-}
-
-// TryGetNode attempts to retrieve a trie node by compact-encoded path. It is not
-// possible to use keybyte-encoding as the path might contain odd nibbles.
-func (t *ZkTrie) TryGetNode(path []byte) ([]byte, int, error) {
-	panic("unimplemented")
-}
-
-func (t *ZkTrie) updatePreimage(preimage []byte, hashField *big.Int) {
-	t.tree.db.UpdatePreimage(preimage, hashField)
-}
-
-// TryUpdate associates key with value in the trie. Subsequent calls to
-// Get will return value. If value has length zero, any existing value
-// is deleted from the trie and calls to Get will return nil.
-//
-// The value bytes must not be modified by the caller while they are
-// stored in the trie.
-//
-// If a node was not found in the database, a MissingNodeError is returned.
-//
-// NOTE: value is restricted to length of bytes32.
-func (t *ZkTrie) TryUpdate(key []byte, vFlag uint32, vPreimage []zkt.Byte32) error {
-	k, err := zkt.ToSecureKey(key)
-	if err != nil {
-		return err
-	}
-	t.updatePreimage(key, k)
-	return t.tree.TryUpdate(zkt.NewHashFromBigInt(k), vFlag, vPreimage)
-}
-
-// TryDelete removes any existing value for key from the trie.
-// If a node was not found in the database, a MissingNodeError is returned.
-func (t *ZkTrie) TryDelete(key []byte) error {
-	k, err := zkt.ToSecureKey(key)
-	if err != nil {
-		return err
-	}
-
-	kHash := zkt.NewHashFromBigInt(k)
-	//mitigate the create-delete issue: do not delete unexisted key
-	if r, _ := t.tree.TryGet(kHash); r == nil {
-		return nil
-	}
-
-	return t.tree.TryDelete(kHash)
-}
-
-// Hash returns the root hash of SecureBinaryTrie. It does not write to the
-// database and can be used even if the trie doesn't have one.
-func (t *ZkTrie) Hash() []byte {
-	return t.tree.rootHash.Bytes()
-}
-
-// Copy returns a copy of SecureBinaryTrie.
-func (t *ZkTrie) Copy() *ZkTrie {
-	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootHash, t.tree.maxLevels)
-	if err != nil {
-		panic("clone trie failed")
-	}
-	return &ZkTrie{
-		tree: cpy,
-	}
-}
-
-// Prove is a simlified calling of ProveWithDeletion
-func (t *ZkTrie) Prove(key []byte, fromLevel uint, writeNode func(*Node) error) error {
-	return t.ProveWithDeletion(key, fromLevel, writeNode, nil)
-}
-
-// ProveWithDeletion constructs a merkle proof for key. The result contains all encoded nodes
-// on the path to the value at key. The value itself is also included in the last
-// node and can be retrieved by verifying the proof.
-//
-// If the trie does not contain a value for key, the returned proof contains all
-// nodes of the longest existing prefix of the key (at least the root node), ending
-// with the node that proves the absence of the key.
-//
-// If the trie contain value for key, the onHit is called BEFORE writeNode being called,
-// both the hitted leaf node and its sibling node is provided as arguments so caller
-// would receive enough information for launch a deletion and calculate the new root
-// base on the proof data
-// Also notice the sibling can be nil if the trie has only one leaf
-func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*Node) error, onHit func(*Node, *Node)) error {
-	k, err := zkt.NewHashFromCheckedBytes(key)
-	if err != nil {
-		return err
-	}
-	var prev *Node
-	return t.tree.prove(k, fromLevel, func(n *Node) (err error) {
-		defer func() {
-			if err == nil {
-				err = writeNode(n)
-			}
-			prev = n
-		}()
-
-		if prev != nil {
-			switch prev.Type {
-			case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
-			default:
-				// sanity check: we should stop after obtain leaf/empty
-				panic("unexpected behavior in prove")
-			}
+	// TryGet returns the value for key stored in the trie.
+	// The value bytes must not be modified by the caller.
+	// If a node was not found in the database, a MissingNodeError is returned.
+	pub fn try_get(&self, key: &Vec<u8>) -> Vec<u8> {
+		let k = H::hash_from_bytes(key).unwrap();
+		let node = self.tree.get_node(&k);
+		if node.is_ok() {
+			node.unwrap().data().unwrap()
+		} else {
+			vec![]
 		}
+	}
 
-		if onHit == nil {
-			return
-		}
+	// Tree exposed underlying ZkTrieImpl
+	pub fn tree(&self) -> ZkTrieImpl<H, DB> {
+		self.tree.clone()
+	}
 
-		// check and call onhit
-		if n.Type == NodeTypeLeaf_New && bytes.Equal(n.NodeKey.Bytes(), k.Bytes()) {
-			if prev == nil {
-				// for sole element trie
-				onHit(n, nil)
-			} else {
-				var sibling, nHash *zkt.Hash
-				nHash, err = n.NodeHash()
-				if err != nil {
-					return
-				}
+	// TryUpdate associates key with value in the trie. Subsequent calls to
+	// Get will return value. If value has length zero, any existing value
+	// is deleted from the trie and calls to Get will return nil.
+	//
+	// The value bytes must not be modified by the caller while they are
+	// stored in the trie.
+	//
+	// If a node was not found in the database, a MissingNodeError is returned.
+	//
+	// NOTE: value is restricted to length of bytes32.
+	pub fn try_update(&mut self, key: &Vec<u8>, v_flag: u32, v_preimage: Vec<[u8; 32]>) -> Result<(), ImplError> {
+		let k = H::hash_from_bytes(key).unwrap();
+		self.tree.try_update(&k, v_flag, v_preimage)
+	}
 
-				if bytes.Equal(nHash.Bytes(), prev.ChildL.Bytes()) {
-					sibling = prev.ChildR
-				} else {
-					sibling = prev.ChildL
-				}
+	// TryDelete removes any existing value for key from the trie.
+	// If a node was not found in the database, a MissingNodeError is returned.
+	pub fn try_delete(&mut self, key: &Vec<u8>) -> Result<(), ImplError> {
+		let k = H::hash_from_bytes(key).unwrap();
+		self.tree.try_delete(&k)
+	}
 
-				if siblingNode, err := t.tree.GetNode(sibling); err == nil {
-					onHit(n, siblingNode)
-				} else {
-					onHit(n, nil)
-				}
-			}
+	// Hash returns the root hash of SecureBinaryTrie. It does not write to the
+	// database and can be used even if the trie doesn't have one.
+	pub fn hash(&self) -> Vec<u8> {
+		self.tree.root().to_bytes()
+	}
 
-		}
-		return
-	})
 }
