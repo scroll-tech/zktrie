@@ -287,16 +287,16 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             let old = self.db.get(&hash.to_bytes());
             match old {
                 Ok(old_v) => {
-                    if !(v == old_v.unwrap()) {
+                    if !(v == old_v) {
                         Err(ImplError::ErrNodeKeyAlreadyExists)
                     } else {
                         // duplicated
-                        Ok(hash.clone())
+                        Ok(hash)
                     }
                 }
                 Err(_) => {
-                    self.db.put(&hash.to_bytes(), &v).unwrap();
-                    Ok(hash.clone())
+                    self.db.put(hash.to_bytes(), v).unwrap();
+                    Ok(hash)
                 }
             }
         }
@@ -313,7 +313,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         } else {
             let hash = n.node_hash().unwrap();
             let v = n.canonical_value();
-            self.db.put(&hash.to_bytes(), &v).unwrap();
+            self.db.put(hash.to_bytes(), v).unwrap();
             Ok(hash)
         }
     }
@@ -327,7 +327,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         } else {
             let ret = self.db.get(&node_hash.to_bytes());
             match ret {
-                Ok(bytes) => Node::new_node_from_bytes(bytes.unwrap()),
+                Ok(bytes) => Node::new_node_from_bytes(&bytes),
                 Err(e) => Err(e),
             }
         }
@@ -594,10 +594,10 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 
     // dbInsert is a helper pub fntion to insert a node : u32o a key in an open db
     // transaction.
-    pub fn db_insert(&mut self, k: &Vec<u8>, t: NodeType, data: &Vec<u8>) -> Result<(), ImplError> {
-        let mut v = data.clone();
-        v.insert(0, t as u8);
-        Ok(self.db.put(k, &v).unwrap())
+    pub fn db_insert(&mut self, k: &[u8], t: NodeType, data: &[u8]) -> Result<(), ImplError> {
+        let mut v = vec![t as u8];
+        v.extend(data);
+        Ok(self.db.put(k.to_vec(), v).unwrap())
     }
 
     // get_leaf_node is more underlying method than TryGet, which obtain an leaf node

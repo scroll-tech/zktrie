@@ -41,7 +41,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     // TryGet returns the value for key stored in the trie.
     // The value bytes must not be modified by the caller.
     // If a node was not found in the database, a MissingNodeError is returned.
-    pub fn try_get(&self, key: &Vec<u8>) -> Vec<u8> {
+    pub fn try_get(&self, key: &[u8]) -> Vec<u8> {
         let k = H::hash_from_bytes(key).unwrap();
         let node = self.tree.get_node(&k);
         if node.is_ok() {
@@ -68,7 +68,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     // NOTE: value is restricted to length of bytes32.
     pub fn try_update(
         &mut self,
-        key: &Vec<u8>,
+        key: &[u8],
         v_flag: u32,
         v_preimage: Vec<[u8; 32]>,
     ) -> Result<(), ImplError> {
@@ -78,7 +78,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
 
     // TryDelete removes any existing value for key from the trie.
     // If a node was not found in the database, a MissingNodeError is returned.
-    pub fn try_delete(&mut self, key: &Vec<u8>) -> Result<(), ImplError> {
+    pub fn try_delete(&mut self, key: &[u8]) -> Result<(), ImplError> {
         let k = H::hash_from_bytes(key).unwrap();
         self.tree.try_delete(&k)
     }

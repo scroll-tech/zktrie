@@ -11,8 +11,8 @@ pub trait Hashable: Clone + Debug + Default + PartialEq {
         lbytes: &Option<Self>,
         rbytes: &Option<Self>,
     ) -> Result<Self, ImplError>;
-    fn handling_elems_and_bytes32(flags: u32, bytes: &Vec<[u8; 32]>) -> Result<Self, ImplError>;
-    fn hash_from_bytes(bytes: &Vec<u8>) -> Result<Self, ImplError>;
+    fn handling_elems_and_bytes32(flags: u32, bytes: &[[u8; 32]]) -> Result<Self, ImplError>;
+    fn hash_from_bytes(bytes: &[u8]) -> Result<Self, ImplError>;
     fn hash_zero() -> Self;
     fn check_in_field(hash: &Self) -> bool;
     fn test_bit(key: &Self, pos: usize) -> bool;
@@ -167,7 +167,7 @@ impl<H: Hashable> Node<H> {
     }
 
     // new_node_from_bytes creates a new node by parsing the input []byte.
-    pub fn new_node_from_bytes(b: Vec<u8>) -> Result<Node<H>, ImplError> {
+    pub fn new_node_from_bytes(b: &[u8]) -> Result<Node<H>, ImplError> {
         if b.len() < 1 {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
@@ -487,7 +487,7 @@ mod tests {
 
         node2.key_preimage = Some([48u8; 32]);
         let b = node2.value();
-        let new_node = Node::<Hash>::new_node_from_bytes(b);
+        let new_node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(new_node.is_ok());
         let new_node = new_node.unwrap();
         assert_eq!(node2.node_type, new_node.node_type);
@@ -497,7 +497,7 @@ mod tests {
 
         //Empty Node
         let b = Node::<Hash>::new_empty_node().value();
-        let new_node = Node::<Hash>::new_node_from_bytes(b);
+        let new_node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(new_node.is_ok());
 
         let mut node3 = new_node.unwrap();
@@ -510,17 +510,17 @@ mod tests {
 
         //Bad Size
         let b = vec![];
-        let node = Node::<Hash>::new_node_from_bytes(b);
+        let node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
         let b = vec![0u8, 1u8, 2u8];
-        let node = Node::<Hash>::new_node_from_bytes(b);
+        let node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
         let b = vec![NodeTypeLeaf as u8; HASH_BYTE_LEN + 3];
-        let node = Node::<Hash>::new_node_from_bytes(b);
+        let node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
@@ -528,7 +528,7 @@ mod tests {
         let vp = vec![[1u8; 32]];
         let valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
         let b = valid_node.value();
-        let node = Node::<Hash>::new_node_from_bytes(b[0..b.len() - 32].to_vec());
+        let node = Node::<Hash>::new_node_from_bytes(&b[0..b.len() - 32]);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
@@ -537,13 +537,13 @@ mod tests {
         let mut valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
         valid_node.key_preimage = Some([48u8; 32]);
         let b = valid_node.value();
-        let node = Node::<Hash>::new_node_from_bytes(b[0..b.len() - 1].to_vec());
+        let node = Node::<Hash>::new_node_from_bytes(&b[0..b.len() - 1]);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
         //Invalid type
         let b = vec![255u8];
-        let node = Node::<Hash>::new_node_from_bytes(b);
+        let node = Node::<Hash>::new_node_from_bytes(&b);
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrInvalidNodeFound);
     }

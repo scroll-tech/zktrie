@@ -48,12 +48,12 @@ impl<T: Hash> Hashable for AsHash<T> {
         Self(T::zero())
     }
 
-    fn hash_from_bytes(bytes: &Vec<u8>) -> Result<Self, ImplError> {
+    fn hash_from_bytes(bytes: &[u8]) -> Result<Self, ImplError> {
         if bytes.len() > HASH_BYTE_LEN {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
             let padding = HASH_BYTE_LEN - bytes.len();
-            let mut b = bytes.clone();
+            let mut b = bytes.to_vec();
             for _ in 0..padding {
                 b.push(0u8);
             }
@@ -86,7 +86,7 @@ impl<T: Hash> Hashable for AsHash<T> {
         }
     }
 
-    fn handling_elems_and_bytes32(flags: u32, bytes: &Vec<[u8; 32]>) -> Result<Self, ImplError> {
+    fn handling_elems_and_bytes32(flags: u32, bytes: &[[u8; 32]]) -> Result<Self, ImplError> {
         let mut tmp = vec![];
         let mut err = false;
         for i in 0..bytes.len() {
