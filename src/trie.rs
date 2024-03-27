@@ -44,11 +44,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     pub fn try_get(&self, key: &[u8]) -> Vec<u8> {
         let k = H::hash_from_bytes(key).unwrap();
         let node = self.tree.get_node(&k);
-        if node.is_ok() {
-            node.unwrap().data().unwrap()
-        } else {
-            vec![]
-        }
+        node.ok().and_then(|n| n.data()).unwrap_or_default()
     }
 
     // Tree exposed underlying ZkTrieImpl

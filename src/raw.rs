@@ -63,15 +63,16 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         root: H,
         max_levels: u32,
     ) -> Result<Self, ImplError> {
+        let is_zero_root = root != H::hash_zero();
         let mt = ZkTrieImpl {
             db: storage,
             max_levels,
             writable: true,
-            root_hash: root.clone(),
+            root_hash: root,
             debug: false,
         };
 
-        if root != H::hash_zero() {
+        if is_zero_root {
             mt.get_node(&mt.root_hash)?;
             Ok(mt)
         } else {
@@ -83,9 +84,9 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     pub fn root(&self) -> H {
         if self.debug {
             self.get_node(&self.root_hash)
-                .expect(format!("load trie root failed hash {:?}", self.root_hash).as_str());
+                .unwrap_or_else(|_| panic!("load trie root failed hash {:?}", self.root_hash));
         }
-        return self.root_hash.clone();
+        self.root_hash.clone()
     }
 
     pub fn max_levels(&self) -> u32 {
@@ -108,7 +109,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             Err(ImplError::ErrInvalidField)
         } else {
             let mut new_leaf_node = Node::<H>::new_leaf_node(node_key.clone(), v_flag, v_preimage);
-            let path = Self::get_path(self.max_levels, &node_key);
+            let path = Self::get_path(self.max_levels, node_key);
             // precalc NodeHash of new leaf here
             // The following shold not fail
             new_leaf_node.node_hash().unwrap();
@@ -120,7 +121,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                 Ok((new_root_hash, _)) => {
                     self.root_hash = new_root_hash;
                     self.db_insert(
-                        &DBKEY_ROOT_NODE.as_bytes().to_vec(),
+                        DBKEY_ROOT_NODE.as_bytes(),
                         DBEntryTypeRoot,
                         &self.root_hash.to_bytes(),
                     )?;
@@ -138,8 +139,8 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         new_leaf: &mut Node<H>,
         old_leaf: &mut Node<H>,
         lvl: u32,
-        path_new_leaf: &Vec<bool>,
-        path_old_leaf: &Vec<bool>,
+        path_new_leaf: &[bool],
+        path_old_leaf: &[bool],
     ) -> Result<H, ImplError> {
         if lvl > self.max_levels - 2 {
             Err(ImplError::ErrReachedMaxLevel)
@@ -287,7 +288,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             let old = self.db.get(&hash.to_bytes());
             match old {
                 Ok(old_v) => {
-                    if !(v == old_v) {
+                    if v != old_v {
                         Err(ImplError::ErrNodeKeyAlreadyExists)
                     } else {
                         // duplicated
@@ -481,7 +482,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         }
 
         // if we have no siblings, it mean the target node is the only node in trie
-        if siblings.len() == 0 {
+        if siblings.is_empty() {
             final_root = Some(H::hash_zero());
             Ok(())
         } else if *path_types.last().unwrap() != NodeTypeBranch0 {
@@ -514,7 +515,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                 remain.pop();
                 pt_remain.pop();
                 path_remain.pop();
-                if (final_root == None) && (sib != H::hash_zero()) {
+                if final_root.is_none() && (sib != H::hash_zero()) {
                     let new_node_type = ptype.deduce_downgrade_type(p); // atRight = path[i]
                     let mut new_node = if p {
                         Node::<H>::new_parent_node(new_node_type, sib, to_upload.clone())
@@ -543,7 +544,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                     Ok(())
                 }?;
             }
-            if final_root == None {
+            if final_root.is_none() {
                 // if all sibling is zero, stop and store the sibling of the
                 // deleted leaf as root
                 final_root = Some(to_upload.clone());
@@ -553,7 +554,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         let root = final_root.expect("finalRoot is not set yet");
         self.root_hash = root;
         self.db_insert(
-            &DBKEY_ROOT_NODE.as_bytes().to_vec(),
+            DBKEY_ROOT_NODE.as_bytes(),
             DBEntryTypeRoot,
             &self.root_hash.to_bytes(),
         )
@@ -562,20 +563,20 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     // recalculatePathUntilRoot recalculates the nodes until the Root
     pub fn recalculate_path_until_root(
         &mut self,
-        path: &Vec<bool>,
-        path_types: &Vec<NodeType>,
+        path: &[bool],
+        path_types: &[NodeType],
         node: &mut Node<H>,
-        siblings: &Vec<H>,
+        siblings: &[H],
     ) -> Result<H, ImplError> {
         let mut n: Node<H> = node.clone();
-        for ((sib, p), pt) in siblings.into_iter().zip(path).zip(path_types).rev() {
+        for ((sib, p), pt) in siblings.iter().zip(path).zip(path_types).rev() {
             let node_hash = n
                 .node_hash()
                 .expect("node hash should not fail in recalculate path");
             if *p {
-                n = Node::<H>::new_parent_node(pt.clone(), sib.clone(), node_hash);
+                n = Node::<H>::new_parent_node(*pt, sib.clone(), node_hash);
             } else {
-                n = Node::<H>::new_parent_node(pt.clone(), node_hash, sib.clone());
+                n = Node::<H>::new_parent_node(*pt, node_hash, sib.clone());
             }
             self.add_node(&mut n).map_or_else(
                 |err| {
@@ -597,7 +598,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     pub fn db_insert(&mut self, k: &[u8], t: NodeType, data: &[u8]) -> Result<(), ImplError> {
         let mut v = vec![t as u8];
         v.extend(data);
-        Ok(self.db.put(k.to_vec(), v).unwrap())
+        self.db.put(k.to_vec(), v)
     }
 
     // get_leaf_node is more underlying method than TryGet, which obtain an leaf node

@@ -5,15 +5,14 @@ pub trait ZktrieDatabase: Clone {
     fn get(&self, k: &[u8]) -> Result<Vec<u8>, ImplError>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SimpleDb {
     db: HashMap<Vec<u8>, Vec<u8>>,
 }
 
 impl SimpleDb {
     pub fn new() -> Self {
-        let m: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
-        SimpleDb { db: m }
+        Self::default()
     }
 }
 

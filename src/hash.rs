@@ -37,7 +37,7 @@ impl<T: Hash> Hashable for AsHash<T> {
     }
 
     fn test_bit(key: &Self, pos: usize) -> bool {
-        return key.as_ref().as_ref()[pos / 8] & (1 << (pos % 8)) != 0;
+        return key.as_ref()[pos / 8] & (1 << (pos % 8)) != 0;
     }
 
     fn to_bytes(&self) -> Vec<u8> {
@@ -54,9 +54,7 @@ impl<T: Hash> Hashable for AsHash<T> {
         } else {
             let padding = HASH_BYTE_LEN - bytes.len();
             let mut b = bytes.to_vec();
-            for _ in 0..padding {
-                b.push(0u8);
-            }
+            b.resize(bytes.len() + padding, 0);
             let mut h = Self::hash_zero();
             h.as_mut()[0..HASH_BYTE_LEN].copy_from_slice(&b.to_vec()[..]);
             if Self::check_in_field(&h) {
@@ -89,11 +87,11 @@ impl<T: Hash> Hashable for AsHash<T> {
     fn handling_elems_and_bytes32(flags: u32, bytes: &[[u8; 32]]) -> Result<Self, ImplError> {
         let mut tmp = vec![];
         let mut err = false;
-        for i in 0..bytes.len() {
+        for (i, byte) in bytes.iter().enumerate() {
             if flags & (1 << i) != 0 {
-                tmp.push(Self(T::simple_hash_byte32(&bytes[i])));
+                tmp.push(Self(T::simple_hash_byte32(byte)));
             } else {
-                let h = Self::hash_from_bytes(&bytes[i].to_vec());
+                let h = Self::hash_from_bytes(byte);
                 if h.is_ok() {
                     tmp.push(h?);
                 } else {

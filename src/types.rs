@@ -56,7 +56,7 @@ impl NodeType {
         if is_right {
             match self {
                 NodeTypeBranch0 => NodeTypeBranch1,
-                NodeTypeBranch1 => self.clone(),
+                NodeTypeBranch1 => *self,
                 NodeTypeBranch2 => NodeTypeBranch3,
                 NodeTypeBranch3 => NodeTypeBranch3,
                 _ => unreachable!(),
@@ -66,7 +66,7 @@ impl NodeType {
                 NodeTypeBranch0 => NodeTypeBranch2,
                 NodeTypeBranch1 => NodeTypeBranch3,
                 NodeTypeBranch3 => NodeTypeBranch3,
-                NodeTypeBranch2 => self.clone(),
+                NodeTypeBranch2 => *self,
                 _ => unreachable!(),
             }
         }
@@ -168,22 +168,21 @@ impl<H: Hashable> Node<H> {
 
     // new_node_from_bytes creates a new node by parsing the input []byte.
     pub fn new_node_from_bytes(b: &[u8]) -> Result<Node<H>, ImplError> {
-        if b.len() < 1 {
+        if b.is_empty() {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
             let mut node = Node::new_empty_node();
             node.node_type = num::FromPrimitive::from_u32(b[0] as u32).unwrap_or(NodeTypeInvalid);
-            let b = b[1..].to_vec();
+            let b = &b[1..];
             match node.node_type {
                 NodeTypeParent | NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2
                 | NodeTypeBranch3 => {
                     if b.len() != 2 * HASH_BYTE_LEN {
                         Err(ImplError::ErrNodeBytesBadSize)
                     } else {
-                        node.child_left = Some(H::hash_from_bytes(&b[..HASH_BYTE_LEN].to_vec())?);
-                        node.child_right = Some(H::hash_from_bytes(
-                            &b[HASH_BYTE_LEN..HASH_BYTE_LEN * 2].to_vec(),
-                        )?);
+                        node.child_left = Some(H::hash_from_bytes(&b[..HASH_BYTE_LEN])?);
+                        node.child_right =
+                            Some(H::hash_from_bytes(&b[HASH_BYTE_LEN..HASH_BYTE_LEN * 2])?);
                         Ok(node)
                     }
                 }
@@ -191,7 +190,7 @@ impl<H: Hashable> Node<H> {
                     if b.len() < HASH_BYTE_LEN + 4 {
                         Err(ImplError::ErrNodeBytesBadSize)
                     } else {
-                        node.node_key = H::hash_from_bytes(&b[..HASH_BYTE_LEN].to_vec())?;
+                        node.node_key = H::hash_from_bytes(&b[..HASH_BYTE_LEN])?;
                         let mark = u32::from_le_bytes(
                             b[HASH_BYTE_LEN..HASH_BYTE_LEN + 4].try_into().unwrap(),
                         );
@@ -201,7 +200,7 @@ impl<H: Hashable> Node<H> {
                         if b.len() < cur_pos + preimage_len * 32 + 1 {
                             Err(ImplError::ErrNodeBytesBadSize)
                         } else {
-                            for i in 0..preimage_len as usize {
+                            for i in 0..preimage_len {
                                 let a = &b[i * 32 + cur_pos..(i + 1) * 32 + cur_pos];
                                 node.value_preimage.push(a.try_into().unwrap());
                             }
@@ -298,13 +297,16 @@ impl<H: Hashable> Node<H> {
     /// for other node type it just return None
     pub fn data(&self) -> Option<Vec<u8>> {
         match self.node_type {
-            NodeTypeLeafNew => unsafe {
-                let slice = std::slice::from_raw_parts(
-                    self.value_preimage.as_ptr() as *const [u8; 32],
-                    self.value_preimage.len(),
-                );
-                Some(slice.flatten().to_vec())
-            },
+            NodeTypeLeafNew => {
+                let bytes = self
+                    .value_preimage
+                    .as_slice()
+                    .iter()
+                    .flat_map(|bt| bt.as_slice())
+                    .copied();
+
+                Some(bytes.collect::<Vec<_>>())
+            }
             _ => None,
         }
     }
@@ -313,21 +315,11 @@ impl<H: Hashable> Node<H> {
     pub fn value(&self) -> Vec<u8> {
         let mut out_bytes = self.canonical_value();
         let len = out_bytes.len();
-        match self.node_type {
-            NodeTypeLeafNew => {
-                if self.key_preimage.is_some() {
-                    let key_preimage = self.key_preimage.unwrap();
-                    out_bytes[len - 1] = key_preimage.len() as u8;
-                    let bytes = unsafe {
-                        std::slice::from_raw_parts(
-                            key_preimage.as_ptr() as *const u8,
-                            key_preimage.len(),
-                        )
-                    };
-                    out_bytes.append(&mut bytes.to_vec())
-                }
+        if self.node_type == NodeTypeLeafNew {
+            if let Some(key_preimage) = &self.key_preimage {
+                out_bytes[len - 1] = key_preimage.len() as u8;
+                out_bytes.extend(key_preimage)
             }
-            _ => {}
         }
         out_bytes
     }
@@ -367,6 +359,7 @@ impl<H: Hashable> Node<H> {
     }
 
     /// String outputs a string representation of a node (different for each type).
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         match self.node_type {
             // {Type || ChildL || ChildR}
