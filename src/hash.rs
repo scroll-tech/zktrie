@@ -9,7 +9,9 @@ pub trait Hash: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Debug + PartialEq 
     fn is_valid(&self) -> bool {
         true
     }
-    fn zero() -> Self;
+    fn zero() -> Self {
+        Default::default()
+    }
     fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self;
     fn simple_hash_byte32(b: &[u8; 32]) -> Self {
         Self::simple_hash_scheme(b, b, HASH_DOMAIN_BYTE32 as u64)
@@ -18,6 +20,10 @@ pub trait Hash: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Debug + PartialEq 
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AsHash<T>(T);
+
+impl<T> AsHash<T> {
+    pub fn take(self) -> T {self.0}
+}
 
 impl<T: Hash> AsRef<[u8]> for AsHash<T> {
     fn as_ref(&self) -> &[u8] {
@@ -67,14 +73,12 @@ impl<T: Hash> Hashable for AsHash<T> {
 
     fn hash_elems_with_domain(
         domain: u64,
-        lbytes: &Option<Self>,
-        rbytes: &Option<Self>,
+        lbytes: &Self,
+        rbytes: &Self,
     ) -> Result<Self, ImplError> {
-        let l = &lbytes.as_ref().unwrap().to_bytes()[..];
-        let r = &rbytes.as_ref().unwrap().to_bytes()[..];
         let h = Self(T::simple_hash_scheme(
-            l.try_into().unwrap(),
-            r.try_into().unwrap(),
+            lbytes.as_ref().try_into().expect("same length"),
+            rbytes.as_ref().try_into().expect("same length"),
             domain,
         ));
         if Self::check_in_field(&h) {
@@ -103,8 +107,8 @@ impl<T: Hash> Hashable for AsHash<T> {
         if !err {
             let domain = bytes.len() * HASH_DOMAIN_ELEMS_BASE + HASH_DOMAIN_BYTE32;
             for _ in 0..bytes.len() - 1 {
-                let a = tmp.pop();
-                let b = tmp.pop();
+                let a = tmp.pop().unwrap_or_default();
+                let b = tmp.pop().unwrap_or_default();
                 let h = Self::hash_elems_with_domain(domain as u64, &a, &b);
                 if h.is_ok() {
                     tmp.push(h?);
@@ -203,8 +207,8 @@ mod tests {
         for i in 0..8 {
             let ret = HashImpl::hash_elems_with_domain(
                 domain,
-                &Some(HashImpl::hash_from_bytes(&bytes[2 * i].to_vec()).unwrap()),
-                &Some(HashImpl::hash_from_bytes(&bytes[2 * i + 1].to_vec()).unwrap()),
+                &HashImpl::hash_from_bytes(&bytes[2 * i].to_vec()).unwrap(),
+                &HashImpl::hash_from_bytes(&bytes[2 * i + 1].to_vec()).unwrap(),
             );
             assert!(ret.is_ok());
         }
