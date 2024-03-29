@@ -22,7 +22,9 @@ pub trait Hash: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Debug + PartialEq 
 pub struct AsHash<T>(T);
 
 impl<T> AsHash<T> {
-    pub fn take(self) -> T {self.0}
+    pub fn take(self) -> T {
+        self.0
+    }
 }
 
 impl<T: Hash> AsRef<[u8]> for AsHash<T> {
@@ -128,6 +130,9 @@ impl<T: Hash> Hashable for AsHash<T> {
 }
 
 #[cfg(test)]
+pub use tests::HashImpl;
+
+#[cfg(test)]
 mod tests {
     use super::{HASH_BYTE_LEN, HASH_DOMAIN_BYTE32};
     use crate::types::Hashable;
@@ -160,8 +165,8 @@ mod tests {
         fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self {
             let mut hasher = POSEIDON_HASHER.clone();
             hasher.update(&[
-                Fr::from_repr(a.clone()).unwrap(),
-                Fr::from_repr(b.clone()).unwrap(),
+                Fr::from_repr(*a).unwrap(),
+                Fr::from_repr(*b).unwrap(),
                 Fr::from(domain),
             ]);
             Hash(hasher.squeeze().to_repr())
@@ -172,11 +177,7 @@ mod tests {
         }
 
         fn is_valid(&self) -> bool {
-            if Fr::from_repr(self.0).is_some().into() {
-                return true;
-            } else {
-                return false;
-            }
+            Fr::from_repr(self.0).is_some().into()
         }
         fn zero() -> Self {
             Self([0; HASH_BYTE_LEN])
@@ -207,8 +208,8 @@ mod tests {
         for i in 0..8 {
             let ret = HashImpl::hash_elems_with_domain(
                 domain,
-                &HashImpl::hash_from_bytes(&bytes[2 * i].to_vec()).unwrap(),
-                &HashImpl::hash_from_bytes(&bytes[2 * i + 1].to_vec()).unwrap(),
+                &HashImpl::hash_from_bytes(&bytes[2 * i]).unwrap(),
+                &HashImpl::hash_from_bytes(&bytes[2 * i + 1]).unwrap(),
             );
             assert!(ret.is_ok());
         }
@@ -222,6 +223,3 @@ mod tests {
         //todo!();
     }
 }
-
-#[cfg(test)]
-pub use tests::HashImpl;

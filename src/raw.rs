@@ -2,7 +2,6 @@ use crate::db::ZktrieDatabase;
 use crate::types::NodeType::*;
 use crate::types::{Hashable, Node, NodeType};
 use num_derive::FromPrimitive;
-use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::Debug;
 use std::panic;
@@ -52,10 +51,9 @@ pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase> {
     debug: bool,
 }
 
-struct CalculatedNode<H: Hashable> (Node<H>);
+struct CalculatedNode<H: Hashable>(Node<H>);
 
 impl<H: Hashable> TryFrom<Node<H>> for CalculatedNode<H> {
-
     type Error = ImplError;
 
     fn try_from(value: Node<H>) -> Result<Self, Self::Error> {
@@ -73,13 +71,7 @@ impl<H: Hashable> CalculatedNode<H> {
     pub fn node_hash(&self) -> H {
         self.0.node_hash().expect("has been calculated")
     }
-
-    pub fn value_hash(&self) -> H {
-        self.0.value_hash().expect("has been calculated")
-    }
 }
-
-
 
 impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     pub fn new_zktrie_impl(storage: DB, max_levels: u32) -> Result<Self, ImplError> {
@@ -142,8 +134,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             let path = Self::get_path(self.max_levels, node_key);
 
             let old_hash = self.root_hash.clone();
-            let ret = self.add_leaf(new_leaf_node.try_into()?, 
-                &old_hash, 0, path, true);
+            let ret = self.add_leaf(new_leaf_node.try_into()?, &old_hash, 0, path, true);
             match ret {
                 Err(e) => Err(e),
                 Ok((new_root_hash, _)) => {
@@ -162,7 +153,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     // pushLeaf recursively pushes an existing oldLeaf down until its path diverges
     // from new_leaf, at which po: u32 both leafs are stored, all while updating the
     // path. pushLeaf returns the node hash of the parent of the oldLeaf and new_leaf
-    pub fn push_leaf(
+    fn push_leaf(
         &mut self,
         new_leaf: CalculatedNode<H>,
         old_leaf: CalculatedNode<H>,
@@ -245,7 +236,8 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                         let path_old_leaf = Self::get_path(self.max_levels, &n.node_key);
                         // We need to push new_leaf down until its path diverges from
                         // n's path
-                        let hash = self.push_leaf(new_leaf, n.try_into()?, lvl, &path, &path_old_leaf)?;
+                        let hash =
+                            self.push_leaf(new_leaf, n.try_into()?, lvl, &path, &path_old_leaf)?;
                         Ok((hash, false))
                     }
                 }
@@ -545,11 +537,12 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                 path_remain.pop();
                 if final_root.is_none() && (sib != H::hash_zero()) {
                     let new_node_type = ptype.deduce_downgrade_type(p); // atRight = path[i]
-                    let new_node : CalculatedNode<H> = if p {
+                    let new_node: CalculatedNode<H> = if p {
                         Node::<H>::new_parent_node(new_node_type, sib, to_upload.clone())
                     } else {
                         Node::<H>::new_parent_node(new_node_type, to_upload.clone(), sib)
-                    }.try_into()?;
+                    }
+                    .try_into()?;
                     let new_node_hash = new_node.node_hash();
                     self.add_node(new_node).map_or_else(
                         |err| {
@@ -598,11 +591,12 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         siblings: &[H],
     ) -> Result<H, ImplError> {
         for ((sib, p), pt) in siblings.iter().zip(path).zip(path_types).rev() {
-            let n : CalculatedNode<H> = if *p {
+            let n: CalculatedNode<H> = if *p {
                 Node::<H>::new_parent_node(*pt, sib.clone(), node_hash)
             } else {
                 Node::<H>::new_parent_node(*pt, node_hash, sib.clone())
-            }.try_into()?;
+            }
+            .try_into()?;
             node_hash = n.node_hash();
             self.add_node(n).map_or_else(
                 |err| {
@@ -661,7 +655,7 @@ mod test {
 
         let db = SimpleDb::new();
         let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
-        assert_eq!(mt.is_ok(), true);
+        assert!(mt.is_ok());
         assert_eq!(Hash::hash_zero(), mt.unwrap().root());
 
         let db = SimpleDb::new();
@@ -670,15 +664,15 @@ mod test {
             Hash::hash_zero(),
             max_levels,
         );
-        assert_eq!(mt.is_ok(), true);
+        assert!(mt.is_ok());
 
         let mut t = mt.unwrap();
         assert_eq!(Hash::hash_zero(), t.root());
 
-        let h = Hash::hash_from_bytes(&[1u8; 1].to_vec()).unwrap();
+        let h = Hash::hash_from_bytes(&[1u8; 1]).unwrap();
         let v = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
         let err = t.try_update(&h, 1, v);
-        assert_eq!(err.is_ok(), true);
+        assert!(err.is_ok());
         assert_ne!(Hash::hash_zero(), t.root());
     }
 
@@ -691,10 +685,10 @@ mod test {
 
         //update and get value check
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             let err = t.try_update(&h, 1, v);
-            assert_eq!(err.is_ok(), true);
+            assert!(err.is_ok());
             let node = t.get_leaf_node(&h).unwrap().unwrap();
             assert_eq!(node.value_preimage.len(), 1);
             assert_eq!(node.value_preimage[0], [20 - i as u8; 32]);
@@ -706,10 +700,10 @@ mod test {
         let mut t = mt.unwrap();
         //update and get value check by reverse order
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[20 - i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[20 - i as u8; 1]).unwrap();
             let v = vec![[i as u8; 32]];
             let err = t.try_update(&h, 1, v);
-            assert_eq!(err.is_ok(), true);
+            assert!(err.is_ok());
             let node = t.get_leaf_node(&h).unwrap().unwrap();
             assert_eq!(node.value_preimage.len(), 1);
             assert_eq!(node.value_preimage[0], [i as u8; 32]);
@@ -718,7 +712,7 @@ mod test {
 
         assert_eq!(h2, h1);
         //invalid key
-        let h = Hash::hash_from_bytes(&[30u8; 1].to_vec()).unwrap();
+        let h = Hash::hash_from_bytes(&[30u8; 1]).unwrap();
         let err = t.get_leaf_node(&h).err().unwrap();
         assert_eq!(err, ImplError::ErrKeyNotFound);
     }
@@ -733,7 +727,7 @@ mod test {
         //update by order, delete reverse order, check root hash change
         let mut hashs = vec![];
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
             hashs.push(t.root().clone());
@@ -741,9 +735,9 @@ mod test {
 
         for i in 1..20 {
             assert_eq!(t.root().clone(), hashs[19 - i]);
-            let h = Hash::hash_from_bytes(&[20 - i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[20 - i as u8; 1]).unwrap();
             let err = t.try_delete(&h);
-            assert_eq!(err.is_ok(), true);
+            assert!(err.is_ok());
         }
 
         //update same leaf and delete by order
@@ -752,21 +746,21 @@ mod test {
         let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
         let mut t = mt.unwrap();
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
         }
 
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 + i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
         }
 
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1].to_vec()).unwrap();
+            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
             let err = t.try_delete(&h);
-            assert_eq!(err.is_ok(), true);
+            assert!(err.is_ok());
         }
     }
 }

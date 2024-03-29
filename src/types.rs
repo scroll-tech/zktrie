@@ -6,11 +6,8 @@ use std::fmt::Debug;
 const HASH_BYTE_LEN: usize = 32;
 
 pub trait Hashable: Clone + Debug + Default + PartialEq {
-    fn hash_elems_with_domain(
-        domain: u64,
-        lbytes: &Self,
-        rbytes: &Self,
-    ) -> Result<Self, ImplError>;
+    fn hash_elems_with_domain(domain: u64, lbytes: &Self, rbytes: &Self)
+        -> Result<Self, ImplError>;
     fn handling_elems_and_bytes32(flags: u32, bytes: &[[u8; 32]]) -> Result<Self, ImplError>;
     fn hash_from_bytes(bytes: &[u8]) -> Result<Self, ImplError>;
     fn hash_zero() -> Self;
@@ -256,12 +253,12 @@ impl<H: Hashable> Node<H> {
                     )?);
                 }
                 NodeTypeLeafNew => {
-                    let value_hash = H::handling_elems_and_bytes32(
-                        self.compress_flags,
-                        &self.value_preimage,
-                    )?;
+                    let value_hash =
+                        H::handling_elems_and_bytes32(self.compress_flags, &self.value_preimage)?;
                     self.node_hash = Some(H::hash_elems_with_domain(
-                        self.node_type as u64, &self.node_key, &value_hash
+                        self.node_type as u64,
+                        &self.node_key,
+                        &value_hash,
                     )?);
                     self.value_hash = Some(value_hash);
                 }
@@ -291,7 +288,7 @@ impl<H: Hashable> Node<H> {
             match self.node_type {
                 NodeTypeLeafNew => self.value_hash.clone(),
                 _ => Some(H::hash_zero()),
-            }    
+            }
         } else {
             None
         }
@@ -418,9 +415,11 @@ mod tests {
         assert_eq!(h, Hash::hash_zero());
 
         //NodeTypeLeafNew
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
         let vp = vec![[48u8; 32]];
-        let node2 = Node::<Hash>::new_leaf_node(k, 1, vp.clone()).calc_node_hash().unwrap();
+        let node2 = Node::<Hash>::new_leaf_node(k, 1, vp.clone())
+            .calc_node_hash()
+            .unwrap();
         assert_eq!(node2.node_type, NodeTypeLeafNew);
         assert_eq!(node2.compress_flags, 1u32);
         assert_eq!(node2.value_preimage, vp);
@@ -431,20 +430,20 @@ mod tests {
         assert!(h.is_some());
 
         //New Parent Node
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
-        let node3 = Node::<Hash>::new_parent_node(
-            NodeTypeBranch3, k.clone(), k.clone()
-        ).calc_node_hash().unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
+        let node3 = Node::<Hash>::new_parent_node(NodeTypeBranch3, k.clone(), k.clone())
+            .calc_node_hash()
+            .unwrap();
         assert_eq!(node3.node_type, NodeTypeBranch3);
         assert_eq!(node3.child_left.as_ref().unwrap(), &k);
         assert_eq!(node3.child_right.as_ref().unwrap(), &k);
 
         //New Parent Node with empty child
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
         let r = Hash::hash_zero();
-        let node4 = Node::<Hash>::new_parent_node(
-            NodeTypeBranch2, k.clone(), r.clone()
-        ).calc_node_hash().unwrap();
+        let node4 = Node::<Hash>::new_parent_node(NodeTypeBranch2, k.clone(), r.clone())
+            .calc_node_hash()
+            .unwrap();
         assert_eq!(node4.node_type, NodeTypeBranch2);
         assert_eq!(node4.child_left.as_ref().unwrap(), &k);
         assert_eq!(node4.child_right.as_ref().unwrap(), &r);
@@ -458,11 +457,11 @@ mod tests {
     #[test]
     fn test_new_node_from_bytes() {
         //Parent Node
-        let k1 = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
-        let k2 = Hash::hash_from_bytes(&[48u8; 32].to_vec()).unwrap();
-        let mut node1 = Node::<Hash>::new_parent_node(
-            NodeTypeBranch0, k1.clone(), k2.clone()
-        ).calc_node_hash().unwrap();
+        let k1 = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
+        let k2 = Hash::hash_from_bytes(&[48u8; 32]).unwrap();
+        let node1 = Node::<Hash>::new_parent_node(NodeTypeBranch0, k1.clone(), k2.clone())
+            .calc_node_hash()
+            .unwrap();
         assert_eq!(node1.node_type, NodeTypeBranch0);
         assert_eq!(node1.child_left.as_ref().unwrap(), &k1);
         assert_eq!(node1.child_right.as_ref().unwrap(), &k2);
@@ -473,10 +472,11 @@ mod tests {
         assert!(h.is_some());
 
         //Leaf Node
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
         let vp = vec![[1u8; 32]];
         let mut node2 = Node::<Hash>::new_leaf_node(k, 1, vp.clone())
-            .calc_node_hash().unwrap();
+            .calc_node_hash()
+            .unwrap();
         let h = node2.node_hash();
         assert!(h.is_some());
         let h = node2.value_hash();
@@ -519,7 +519,7 @@ mod tests {
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
         let vp = vec![[1u8; 32]];
         let valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
         let b = valid_node.value();
@@ -527,7 +527,7 @@ mod tests {
         assert!(node.is_err());
         assert_eq!(node.err().unwrap(), ImplError::ErrNodeBytesBadSize);
 
-        let k = Hash::hash_from_bytes(&[47u8; 32].to_vec()).unwrap();
+        let k = Hash::hash_from_bytes(&[47u8; 32]).unwrap();
         let vp = vec![[1u8; 32]];
         let mut valid_node = Node::<Hash>::new_leaf_node(k, 1, vp.clone());
         valid_node.key_preimage = Some([48u8; 32]);
@@ -549,8 +549,8 @@ mod tests {
         let a2 = [48u8; 32];
         let a3 = [49u8; 32];
         let mark = [1u8, 1u8, 0u8, 0u8];
-        let k = Hash::hash_from_bytes(&a1.to_vec()).unwrap();
-        let vp = vec![a2.clone()];
+        let k = Hash::hash_from_bytes(&a1).unwrap();
+        let vp = vec![a2];
 
         //Leaf Node
         let mut node = Node::<Hash>::new_leaf_node(k.clone(), 1, vp.clone());
