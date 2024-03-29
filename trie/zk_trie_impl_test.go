@@ -73,26 +73,37 @@ func TestMerkleTree_Init(t *testing.T) {
 	t.Run("Test NewZkTrieImpl", func(t *testing.T) {
 		mt, err := NewZkTrieImpl(db, maxLevels)
 		assert.NoError(t, err)
-		assert.Equal(t, zkt.HashZero.Bytes(), mt.Root().Bytes())
+		mtRoot, err := mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero.Bytes(), mtRoot.Bytes())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with zero hash root", func(t *testing.T) {
 		mt, err := NewZkTrieImplWithRoot(db, &zkt.HashZero, maxLevels)
 		assert.NoError(t, err)
-		assert.Equal(t, zkt.HashZero.Bytes(), mt.Root().Bytes())
+		mtRoot, err := mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero.Bytes(), mtRoot.Bytes())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node exists", func(t *testing.T) {
 		mt1, err := NewZkTrieImplWithRoot(db, &zkt.HashZero, maxLevels)
 		assert.NoError(t, err)
-		assert.Equal(t, zkt.HashZero.Bytes(), mt1.Root().Bytes())
+		mt1Root, err := mt1.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero.Bytes(), mt1Root.Bytes())
 		err = mt1.TryUpdate(zkt.NewHashFromBytes([]byte{1}), 1, []zkt.Byte32{{byte(1)}})
 		assert.NoError(t, err)
+		mt1Root, err = mt1.Root()
+		assert.NoError(t, err)
+		assert.NoError(t, mt1.Commit())
 
-		mt2, err := NewZkTrieImplWithRoot(db, mt1.Root(), maxLevels)
+		mt2, err := NewZkTrieImplWithRoot(db, mt1Root, maxLevels)
 		assert.NoError(t, err)
 		assert.Equal(t, maxLevels, mt2.maxLevels)
-		assert.Equal(t, "0539c6b1cac741eb1e98b2c271733d1e6f0fad557228f6b039d894b0a627c8d9", mt2.Root().Hex())
+		mt2Root, err := mt2.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, "0539c6b1cac741eb1e98b2c271733d1e6f0fad557228f6b039d894b0a627c8d9", mt2Root.Hex())
 	})
 
 	t.Run("Test NewZkTrieImplWithRoot with non-zero hash root and node does not exist", func(t *testing.T) {
@@ -146,20 +157,25 @@ func TestMerkleTree_AddUpdateGetWord(t *testing.T) {
 
 func TestMerkleTree_Deletion(t *testing.T) {
 	t.Run("Check root consistency", func(t *testing.T) {
+		var err error
 		mt := newTestingMerkle(t, 10)
-		hashes := make([][]byte, 7)
-		hashes[0] = mt.Root().Bytes()
+		hashes := make([]*zkt.Hash, 7)
+		hashes[0], err = mt.Root()
+		assert.NoError(t, err)
 
 		for i := 0; i < 6; i++ {
 			err := mt.AddWord(zkt.NewByte32FromBytes([]byte{byte(i)}), &zkt.Byte32{byte(i)})
 			assert.NoError(t, err)
-			hashes[i+1] = mt.Root().Bytes()
+			hashes[i+1], err = mt.Root()
+			assert.NoError(t, err)
 		}
 
 		for i := 5; i >= 0; i-- {
 			err := mt.DeleteWord(zkt.NewByte32FromBytes([]byte{byte(i)}))
 			assert.NoError(t, err)
-			assert.Equal(t, hashes[i], mt.Root().Bytes())
+			root, err := mt.Root()
+			assert.NoError(t, err)
+			assert.Equal(t, hashes[i], root, i)
 		}
 	})
 
@@ -167,12 +183,14 @@ func TestMerkleTree_Deletion(t *testing.T) {
 		mt := newTestingMerkle(t, 10)
 		key1 := zkt.NewByte32FromBytes([]byte{67}) //0b1000011
 		err := mt.AddWord(key1, &zkt.Byte32{67})
-		rootPhase1 := mt.Root().Bytes()
+		assert.NoError(t, err)
+		rootPhase1, err := mt.Root()
 		assert.NoError(t, err)
 		key2 := zkt.NewByte32FromBytes([]byte{131}) //0b10000011
 		err = mt.AddWord(key2, &zkt.Byte32{131})
 		assert.NoError(t, err)
-		rootPhase2 := mt.Root().Bytes()
+		rootPhase2, err := mt.Root()
+		assert.NoError(t, err)
 
 		assertKeyDepth := func(key *zkt.Byte32, expectedDep int) {
 			levelCnt := 0
@@ -193,11 +211,15 @@ func TestMerkleTree_Deletion(t *testing.T) {
 		assert.NoError(t, err)
 
 		assertKeyDepth(key1, 1)
-		assert.Equal(t, rootPhase1, mt.Root().Bytes())
+		curRoot, err := mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, rootPhase1, curRoot)
 
 		err = mt.AddWord(key2, &zkt.Byte32{131})
 		assert.NoError(t, err)
-		assert.Equal(t, rootPhase2, mt.Root().Bytes())
+		curRoot, err = mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, rootPhase2, curRoot)
 		assertKeyDepth(key1, 8)
 
 		// delete node with parent sibling (fail before a410f14)
@@ -208,7 +230,9 @@ func TestMerkleTree_Deletion(t *testing.T) {
 		err = mt.DeleteWord(key3)
 		assert.NoError(t, err)
 		assertKeyDepth(key1, 8)
-		assert.Equal(t, rootPhase2, mt.Root().Bytes())
+		curRoot, err = mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, rootPhase2, curRoot)
 
 		key4 := zkt.NewByte32FromBytes([]byte{4}) //0b100, so it is 2 level node (fail before d1c735)
 		err = mt.AddWord(key4, &zkt.Byte32{4})
@@ -218,7 +242,9 @@ func TestMerkleTree_Deletion(t *testing.T) {
 
 		err = mt.DeleteWord(key4)
 		assert.NoError(t, err)
-		assert.Equal(t, rootPhase2, mt.Root().Bytes())
+		curRoot, err = mt.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, rootPhase2, curRoot)
 	})
 }
 
@@ -239,7 +265,7 @@ func TestZkTrieImpl_Add(t *testing.T) {
 			{k2, k1},
 		}
 
-		roots := make([][]byte, len(orders))
+		roots := make([]*zkt.Hash, len(orders))
 		for i, order := range orders {
 			mt := newTestingMerkle(t, 10)
 			for _, key := range order {
@@ -247,9 +273,12 @@ func TestZkTrieImpl_Add(t *testing.T) {
 				err := mt.AddWord(key, value)
 				assert.NoError(t, err)
 			}
-			roots[i] = mt.Root().Bytes()
+			var err error
+			roots[i], err = mt.Root()
+			assert.NoError(t, err)
 		}
 
+		assert.Equal(t, "225fe589e8cbdfe424a032e6e2fd1132762b20794cff61f0c70e8f757b6a0ed7", roots[0].Hex())
 		assert.Equal(t, roots[0], roots[1])
 	})
 
@@ -263,7 +292,7 @@ func TestZkTrieImpl_Add(t *testing.T) {
 			{k3, k2, k1},
 		}
 
-		roots := make([][]byte, len(orders))
+		roots := make([]*zkt.Hash, len(orders))
 		for i, order := range orders {
 			mt := newTestingMerkle(t, 10)
 			for _, key := range order {
@@ -271,10 +300,13 @@ func TestZkTrieImpl_Add(t *testing.T) {
 				err := mt.AddWord(key, value)
 				assert.NoError(t, err)
 			}
-			roots[i] = mt.Root().Bytes()
+			var err error
+			roots[i], err = mt.Root()
+			assert.NoError(t, err)
 		}
 
 		for i := 1; i < len(roots); i++ {
+			assert.Equal(t, "25aa478a6c8c3a7cab40b0c3a37f8ed6815ee575228f0ba8e77d1145191f9a34", roots[0].Hex())
 			assert.Equal(t, roots[0], roots[i])
 		}
 	})
@@ -302,14 +334,16 @@ func TestZkTrieImpl_Update(t *testing.T) {
 		mt1 := newTestingMerkle(t, 10)
 		err := mt1.AddWord(k1, zkt.NewByte32FromBytes([]byte{1}))
 		assert.NoError(t, err)
-		root1 := mt1.Root().Bytes()
+		root1, err := mt1.Root()
+		assert.NoError(t, err)
 
 		mt2 := newTestingMerkle(t, 10)
 		err = mt2.AddWord(k1, zkt.NewByte32FromBytes([]byte{2}))
 		assert.NoError(t, err)
 		err = mt2.UpdateWord(k1, zkt.NewByte32FromBytes([]byte{1}))
 		assert.NoError(t, err)
-		root2 := mt2.Root().Bytes()
+		root2, err := mt2.Root()
+		assert.NoError(t, err)
 
 		assert.Equal(t, root1, root2)
 	})
@@ -320,7 +354,8 @@ func TestZkTrieImpl_Update(t *testing.T) {
 		assert.NoError(t, err)
 		err = mt1.AddWord(k2, zkt.NewByte32FromBytes([]byte{2}))
 		assert.NoError(t, err)
-		root1 := mt1.Root().Bytes()
+		root1, err := mt1.Root()
+		assert.NoError(t, err)
 
 		mt2 := newTestingMerkle(t, 10)
 		err = mt2.AddWord(k1, zkt.NewByte32FromBytes([]byte{1}))
@@ -329,7 +364,8 @@ func TestZkTrieImpl_Update(t *testing.T) {
 		assert.NoError(t, err)
 		err = mt2.UpdateWord(k2, zkt.NewByte32FromBytes([]byte{2}))
 		assert.NoError(t, err)
-		root2 := mt2.Root().Bytes()
+		root2, err := mt2.Root()
+		assert.NoError(t, err)
 
 		assert.Equal(t, root1, root2)
 	})
@@ -352,7 +388,13 @@ func TestZkTrieImpl_Update(t *testing.T) {
 			err = mt2.UpdateWord(key, zkt.NewByte32FromBytes([]byte{byte(i + 6)}))
 			assert.NoError(t, err)
 		}
-		assert.Equal(t, mt1.Root().Bytes(), mt2.Root().Bytes())
+
+		root1, err := mt1.Root()
+		assert.NoError(t, err)
+		root2, err := mt2.Root()
+		assert.NoError(t, err)
+
+		assert.Equal(t, root1, root2)
 	})
 
 	t.Run("Update same value", func(t *testing.T) {
@@ -389,14 +431,18 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 
 	t.Run("Test deletion leads to empty tree", func(t *testing.T) {
 		emptyMT := newTestingMerkle(t, 10)
+		emptyMTRoot, err := emptyMT.Root()
+		assert.NoError(t, err)
 
 		mt1 := newTestingMerkle(t, 10)
-		err := mt1.AddWord(k1, zkt.NewByte32FromBytes([]byte{1}))
+		err = mt1.AddWord(k1, zkt.NewByte32FromBytes([]byte{1}))
 		assert.NoError(t, err)
 		err = mt1.DeleteWord(k1)
 		assert.NoError(t, err)
-		assert.Equal(t, zkt.HashZero.Bytes(), mt1.Root().Bytes())
-		assert.Equal(t, emptyMT.Root().Bytes(), mt1.Root().Bytes())
+		mt1Root, err := mt1.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero, *mt1Root)
+		assert.Equal(t, emptyMTRoot, mt1Root)
 
 		keys := []*zkt.Byte32{k1, k2, k3, k4}
 		mt2 := newTestingMerkle(t, 10)
@@ -408,8 +454,10 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 			err := mt2.DeleteWord(key)
 			assert.NoError(t, err)
 		}
-		assert.Equal(t, zkt.HashZero.Bytes(), mt2.Root().Bytes())
-		assert.Equal(t, emptyMT.Root().Bytes(), mt2.Root().Bytes())
+		mt2Root, err := mt2.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero, *mt2Root)
+		assert.Equal(t, emptyMTRoot, mt2Root)
 
 		mt3 := newTestingMerkle(t, 10)
 		for _, key := range keys {
@@ -420,8 +468,10 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 			err := mt3.DeleteWord(keys[i])
 			assert.NoError(t, err)
 		}
-		assert.Equal(t, zkt.HashZero.Bytes(), mt3.Root().Bytes())
-		assert.Equal(t, emptyMT.Root().Bytes(), mt3.Root().Bytes())
+		mt3Root, err := mt3.Root()
+		assert.NoError(t, err)
+		assert.Equal(t, zkt.HashZero, *mt3Root)
+		assert.Equal(t, emptyMTRoot, mt3Root)
 	})
 
 	t.Run("Test equivalent trees after deletion", func(t *testing.T) {
@@ -443,7 +493,12 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 		err = mt2.AddWord(k4, zkt.NewByte32FromBytes([]byte{byte(4)}))
 		assert.NoError(t, err)
 
-		assert.Equal(t, mt1.Root().Bytes(), mt2.Root().Bytes())
+		mt1Root, err := mt1.Root()
+		assert.NoError(t, err)
+		mt2Root, err := mt2.Root()
+		assert.NoError(t, err)
+
+		assert.Equal(t, mt1Root, mt2Root)
 
 		mt3 := newTestingMerkle(t, 10)
 		for i, key := range keys {
@@ -460,7 +515,12 @@ func TestZkTrieImpl_Delete(t *testing.T) {
 		err = mt4.AddWord(k4, zkt.NewByte32FromBytes([]byte{4}))
 		assert.NoError(t, err)
 
-		assert.Equal(t, mt3.Root().Bytes(), mt4.Root().Bytes())
+		mt3Root, err := mt3.Root()
+		assert.NoError(t, err)
+		mt4Root, err := mt4.Root()
+		assert.NoError(t, err)
+
+		assert.Equal(t, mt3Root, mt4Root)
 	})
 
 	t.Run("Test repeat deletion", func(t *testing.T) {
@@ -516,29 +576,30 @@ func TestMerkleTree_BuildAndVerifyZkTrieProof(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, 1, len(node.ValuePreimage))
 			assert.Equal(t, (&zkt.Byte32{td.value})[:], node.ValuePreimage[0][:])
+			assert.NoError(t, zkTrie.Commit())
 
-			proof, node, err := BuildZkTrieProof(zkTrie.rootHash, td.key, 10, getNode)
+			proof, node, err := BuildZkTrieProof(zkTrie.rootKey, td.key, 10, getNode)
 			assert.NoError(t, err)
 
-			valid := VerifyProofZkTrie(zkTrie.rootHash, proof, node)
+			valid := VerifyProofZkTrie(zkTrie.rootKey, proof, node)
 			assert.True(t, valid)
 		}
 	})
 
 	t.Run("Test with non-existent key", func(t *testing.T) {
-		proof, node, err := BuildZkTrieProof(zkTrie.rootHash, nonExistentKey, 10, getNode)
+		proof, node, err := BuildZkTrieProof(zkTrie.rootKey, nonExistentKey, 10, getNode)
 		assert.NoError(t, err)
 		assert.False(t, proof.Existence)
-		valid := VerifyProofZkTrie(zkTrie.rootHash, proof, node)
+		valid := VerifyProofZkTrie(zkTrie.rootKey, proof, node)
 		assert.True(t, valid)
 		nodeAnother, err := zkTrie.GetLeafNodeByWord(zkt.NewByte32FromBytes([]byte{byte(big.NewInt(1).Int64())}))
 		assert.NoError(t, err)
-		valid = VerifyProofZkTrie(zkTrie.rootHash, proof, nodeAnother)
+		valid = VerifyProofZkTrie(zkTrie.rootKey, proof, nodeAnother)
 		assert.False(t, valid)
 
 		hash, err := proof.Verify(node.nodeHash)
 		assert.NoError(t, err)
-		assert.Equal(t, hash[:], zkTrie.rootHash[:])
+		assert.Equal(t, hash[:], zkTrie.rootKey[:])
 	})
 }
 

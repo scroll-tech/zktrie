@@ -126,12 +126,26 @@ func (t *ZkTrie) TryDelete(key []byte) error {
 // Hash returns the root hash of SecureBinaryTrie. It does not write to the
 // database and can be used even if the trie doesn't have one.
 func (t *ZkTrie) Hash() []byte {
-	return t.tree.rootHash.Bytes()
+	root, err := t.tree.Root()
+	if err != nil {
+		panic("root failed in trie.Hash")
+	}
+	return root.Bytes()
+}
+
+// Commit flushes the trie to database
+func (t *ZkTrie) Commit() error {
+	return t.tree.Commit()
 }
 
 // Copy returns a copy of SecureBinaryTrie.
 func (t *ZkTrie) Copy() *ZkTrie {
-	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootHash, t.tree.maxLevels)
+	err := t.tree.Commit()
+	if err != nil {
+		panic("commit failed in clone trie")
+	}
+
+	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootKey, t.tree.maxLevels)
 	if err != nil {
 		panic("clone trie failed")
 	}

@@ -33,7 +33,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 	path := getPath(mt.maxLevels, kHash[:])
 	var nodes []*Node
 	var lastN *Node
-	tn := mt.rootHash
+	tn := mt.rootKey
 	for i := 0; i < mt.maxLevels; i++ {
 		n, err := mt.GetNode(tn)
 		if err != nil {
