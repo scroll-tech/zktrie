@@ -129,12 +129,15 @@ impl db::ZktrieDatabase for SharedMemoryDb {
 
 use trie::ZkTrie as ZktrieRs;
 
+#[derive(Clone)]
 pub struct ZkTrie {
     trie: ZktrieRs<HashImpl, SharedMemoryDb>,
     binding_db: Rc<ZkMemoryDb>,
 }
 
 pub type ErrString = String;
+
+const MAGICSMTBYTES: &[u8] = "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI".as_bytes();
 
 impl ZkMemoryDb {
     pub fn new() -> Rc<Self> {
@@ -144,6 +147,9 @@ impl ZkMemoryDb {
     }
 
     pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+        if data == MAGICSMTBYTES {
+            return Ok(());
+        }
         let n = ZkTrieNode::parse(data)?;
         self.db
             .borrow_mut()
@@ -198,7 +204,6 @@ impl ZkTrie {
     // build prove array for mpt path
     pub fn prove(&self, key: &[u8]) -> Result<Vec<Vec<u8>>, ErrString> {
         use types::Node;
-        static MAGICSMTBYTES: &[u8] = "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI".as_bytes();
 
         let s_key = Node::<HashImpl>::hash_bytes(key).map_err(|e| e.to_string())?;
 
