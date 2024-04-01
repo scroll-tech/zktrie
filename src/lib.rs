@@ -3,17 +3,17 @@ pub mod go_lib;
 pub mod rs_lib;
 
 pub use constants::*;
-pub type SimpleHashSchemeFn = fn(&[u8;32],&[u8;32],&[u8;32]) -> Option<[u8;32]>;
+pub type SimpleHashSchemeFn = fn(&[u8; 32], &[u8; 32], &[u8; 32]) -> Option<[u8; 32]>;
 
-#[cfg(feature = "rs_zktrie")]
-pub use rs_lib::*;
 #[cfg(not(feature = "rs_zktrie"))]
 pub use go_lib::*;
+#[cfg(feature = "rs_zktrie")]
+pub use rs_lib::*;
 
 use std::sync::OnceLock;
 static HASHSCHEME: OnceLock<SimpleHashSchemeFn> = OnceLock::new();
 
-pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn){
+pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
     go_lib::init_hash_scheme(c_hash_scheme_adapter);
     HASHSCHEME.set(f).unwrap_or_default()
 }
@@ -33,10 +33,10 @@ extern "C" fn c_hash_scheme_adapter(
         TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) }).expect("length specified");
     let out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
-    let h = HASHSCHEME.get()
-        .expect("if it is called hash scheme must be initied")
-        (&a, &b, &domain);
-    
+    let h = HASHSCHEME
+        .get()
+        .expect("if it is called hash scheme must be initied")(&a, &b, &domain);
+
     static HASH_OUT_ERROR: &str = "hash scheme can not output";
     if let Some(h) = h {
         out.copy_from_slice(&h);
@@ -55,26 +55,25 @@ mod tests {
     use halo2_proofs::halo2curves::group::ff::PrimeField;
     use poseidon_circuit::Hashable;
 
-    fn poseidon_hash_scheme(a: &[u8;32], b: &[u8;32], domain: &[u8;32]) -> Option<[u8;32]>{
-        let fa = Fr::from_bytes(&a);
+    fn poseidon_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: &[u8; 32]) -> Option<[u8; 32]> {
+        let fa = Fr::from_bytes(a);
         let fa = if fa.is_some().into() {
             fa.unwrap()
         } else {
             return None;
         };
-        let fb = Fr::from_bytes(&b);
+        let fb = Fr::from_bytes(b);
         let fb = if fb.is_some().into() {
             fb.unwrap()
         } else {
             return None;
         };
-        let fdomain = Fr::from_bytes(&domain);
+        let fdomain = Fr::from_bytes(domain);
         let fdomain = if fdomain.is_some().into() {
             fdomain.unwrap()
         } else {
             return None;
         };
-
         Some(Fr::hash_with_domain([fa, fb], fdomain).to_repr())
     }
 

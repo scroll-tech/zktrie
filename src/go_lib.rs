@@ -1,7 +1,7 @@
+use super::constants::*;
 use std::ffi::{self, c_char, c_int, c_void};
 use std::marker::{PhantomData, PhantomPinned};
 use std::{fmt, rc::Rc};
-use super::constants::*;
 
 #[repr(C)]
 struct MemoryDb {
