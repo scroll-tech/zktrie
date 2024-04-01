@@ -85,7 +85,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         root: H,
         max_levels: u32,
     ) -> Result<Self, ImplError> {
-        let is_zero_root = root != H::hash_zero();
+        let not_zero_root = root != H::hash_zero();
         let mt = ZkTrieImpl {
             db: storage,
             max_levels,
@@ -94,7 +94,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             debug: false,
         };
 
-        if is_zero_root {
+        if not_zero_root {
             mt.get_node(&mt.root_hash)?;
             Ok(mt)
         } else {
@@ -354,7 +354,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         }
     }
 
-    pub fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
+    fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
         let path = Self::get_path(self.max_levels, node_key);
         let mut next_hash = self.root_hash.clone();
         let mut siblings = vec![];
@@ -482,9 +482,42 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         }
     }
 
+    // prove constructs a merkle proof for SMT, it respect the protocol used by the ethereum-trie
+    // but save the node data with a compact form
+    pub fn prove(&self, node_key: &H) -> Result<Vec<Node<H>>, ImplError> {
+        let path = Self::get_path(self.max_levels, node_key);
+        let mut next_hash = self.root_hash.clone();
+        let mut nodes = vec![];
+        for i in 0..self.max_levels {
+            let n = self.get_node(&next_hash)?;
+            let finished = match n.node_type {
+                NodeTypeEmptyNew | NodeTypeLeafNew => true,
+                NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
+                    if path[i as usize] {
+                        next_hash = n.child_right.clone().expect("node should has this child");
+                    } else {
+                        next_hash = n.child_left.clone().expect("node should has this child");
+                    };
+                    false
+                }
+                NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent => {
+                    unreachable!("encounter deprecated node types")
+                }
+                _ => unreachable!(),
+            };
+
+            nodes.push(n);
+            if finished {
+                break;
+            }
+        }
+
+        Ok(nodes)
+    }
+
     // rmAndUpload removes the key, and goes up until the root updating all the
     // nodes with the new values.
-    pub fn rm_and_upload(
+    fn rm_and_upload(
         &mut self,
         path: Vec<bool>,
         path_types: Vec<NodeType>,
@@ -583,7 +616,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     }
 
     // recalculatePathUntilRoot recalculates the nodes until the Root
-    pub fn recalculate_path_until_root(
+    fn recalculate_path_until_root(
         &mut self,
         path: &[bool],
         path_types: &[NodeType],
@@ -615,7 +648,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
 
     // dbInsert is a helper pub fntion to insert a node : u32o a key in an open db
     // transaction.
-    pub fn db_insert(&mut self, k: &[u8], t: NodeType, data: &[u8]) -> Result<(), ImplError> {
+    fn db_insert(&mut self, k: &[u8], t: NodeType, data: &[u8]) -> Result<(), ImplError> {
         let mut v = vec![t as u8];
         v.extend(data);
         self.db.put(k.to_vec(), v)
@@ -632,7 +665,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     }
 
     // get_path returns the binary path, from the root to the leaf.
-    pub fn get_path(num_levels: u32, key: &H) -> Vec<bool> {
+    fn get_path(num_levels: u32, key: &H) -> Vec<bool> {
         let mut path = vec![];
         for n in 0..num_levels {
             path.push(H::test_bit(key, n as usize))
@@ -669,7 +702,7 @@ mod test {
         let mut t = mt.unwrap();
         assert_eq!(Hash::hash_zero(), t.root());
 
-        let h = Hash::hash_from_bytes(&[1u8; 1]).unwrap();
+        let h = Hash::from_bytes(&[1u8; 1]).unwrap();
         let v = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
         let err = t.try_update(&h, 1, v);
         assert!(err.is_ok());
@@ -685,7 +718,7 @@ mod test {
 
         //update and get value check
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             let err = t.try_update(&h, 1, v);
             assert!(err.is_ok());
@@ -700,7 +733,7 @@ mod test {
         let mut t = mt.unwrap();
         //update and get value check by reverse order
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[20 - i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[20 - i as u8; 1]).unwrap();
             let v = vec![[i as u8; 32]];
             let err = t.try_update(&h, 1, v);
             assert!(err.is_ok());
@@ -712,7 +745,7 @@ mod test {
 
         assert_eq!(h2, h1);
         //invalid key
-        let h = Hash::hash_from_bytes(&[30u8; 1]).unwrap();
+        let h = Hash::from_bytes(&[30u8; 1]).unwrap();
         let err = t.get_leaf_node(&h).err().unwrap();
         assert_eq!(err, ImplError::ErrKeyNotFound);
     }
@@ -727,7 +760,7 @@ mod test {
         //update by order, delete reverse order, check root hash change
         let mut hashs = vec![];
         for i in 1..20 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
             hashs.push(t.root().clone());
@@ -735,7 +768,7 @@ mod test {
 
         for i in 1..20 {
             assert_eq!(t.root().clone(), hashs[19 - i]);
-            let h = Hash::hash_from_bytes(&[20 - i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[20 - i as u8; 1]).unwrap();
             let err = t.try_delete(&h);
             assert!(err.is_ok());
         }
@@ -746,19 +779,19 @@ mod test {
         let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
         let mut t = mt.unwrap();
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 - i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
         }
 
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
             let v = vec![[20 + i as u8; 32]];
             t.try_update(&h, 1, v).unwrap();
         }
 
         for i in 1..10 {
-            let h = Hash::hash_from_bytes(&[i as u8; 1]).unwrap();
+            let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
             let err = t.try_delete(&h);
             assert!(err.is_ok());
         }

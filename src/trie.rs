@@ -1,6 +1,6 @@
 use crate::db::ZktrieDatabase;
 use crate::raw::{ImplError, ZkTrieImpl};
-use crate::types::Hashable;
+use crate::types::{Hashable, Node, NodeType, TrieHashScheme};
 
 // ZkTrie wraps a trie with key hashing. In a secure trie, all
 // access operations hash the key using keccak256. This prevents
@@ -42,8 +42,8 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     // The value bytes must not be modified by the caller.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_get(&self, key: &[u8]) -> Vec<u8> {
-        let k = H::hash_from_bytes(key).unwrap();
-        let node = self.tree.get_node(&k);
+        let k = Node::<H>::hash_bytes(key).unwrap();
+        let node = self.tree.try_get(&k);
         node.ok().and_then(|n| n.data()).unwrap_or_default()
     }
 
@@ -68,14 +68,14 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
         v_flag: u32,
         v_preimage: Vec<[u8; 32]>,
     ) -> Result<(), ImplError> {
-        let k = H::hash_from_bytes(key).unwrap();
+        let k = Node::<H>::hash_bytes(key).unwrap();
         self.tree.try_update(&k, v_flag, v_preimage)
     }
 
     // TryDelete removes any existing value for key from the trie.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_delete(&mut self, key: &[u8]) -> Result<(), ImplError> {
-        let k = H::hash_from_bytes(key).unwrap();
+        let k = Node::<H>::hash_bytes(key).unwrap();
         self.tree.try_delete(&k)
     }
 
@@ -83,5 +83,29 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     // database and can be used even if the trie doesn't have one.
     pub fn hash(&self) -> Vec<u8> {
         self.tree.root().to_bytes()
+    }
+
+    // Prove constructs a merkle proof for key. The result contains all encoded nodes
+    // on the path to the value at key. The value itself is also included in the last
+    // node and can be retrieved by verifying the proof.
+    //
+    // If the trie does not contain a value for key, the returned proof contains all
+    // nodes of the longest existing prefix of the key (at least the root node), ending
+    // with the node that proves the absence of the key. and the `bool` in returned
+    // tuple is false
+    //
+    // If the trie contain a non-empty leaf for key, the `bool` in returned tuple is true
+    pub fn prove(&self, key_hash_byte: &[u8]) -> Result<(Vec<Node<H>>, bool), ImplError> {
+        let key_hash = H::from_bytes(key_hash_byte)?;
+        let proof = self.tree.prove(&key_hash)?;
+        let mut hit = false;
+
+        for n in &proof {
+            if n.node_type == NodeType::NodeTypeLeafNew && n.node_key == key_hash {
+                hit = true
+            }
+        }
+
+        Ok((proof, hit))
     }
 }

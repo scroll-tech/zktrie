@@ -1,21 +1,16 @@
 use crate::{raw::ImplError, types::Hashable};
 use std::fmt::Debug;
 
-const HASH_BYTE_LEN: usize = 32;
-const HASH_DOMAIN_ELEMS_BASE: usize = 256;
-const HASH_DOMAIN_BYTE32: usize = 2 * HASH_DOMAIN_ELEMS_BASE;
-
 pub trait Hash: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Debug + PartialEq {
+    const LEN: usize;
+
     fn is_valid(&self) -> bool {
         true
     }
     fn zero() -> Self {
         Default::default()
     }
-    fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self;
-    fn simple_hash_byte32(b: &[u8; 32]) -> Self {
-        Self::simple_hash_scheme(b, b, HASH_DOMAIN_BYTE32 as u64)
-    }
+    fn simple_hash_scheme(a: [u8; 32], b: [u8; 32], domain: u64) -> Self;
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -45,26 +40,24 @@ impl<T: Hash> Hashable for AsHash<T> {
     }
 
     fn test_bit(key: &Self, pos: usize) -> bool {
-        return key.as_ref()[pos / 8] & (1 << (pos % 8)) != 0;
+        return key.as_ref()[T::LEN - pos / 8 - 1] & (1 << (pos % 8)) != 0;
     }
 
     fn to_bytes(&self) -> Vec<u8> {
-        self.as_ref()[0..HASH_BYTE_LEN].to_vec()
+        self.as_ref()[0..T::LEN].to_vec()
     }
 
     fn hash_zero() -> Self {
         Self(T::zero())
     }
 
-    fn hash_from_bytes(bytes: &[u8]) -> Result<Self, ImplError> {
-        if bytes.len() > HASH_BYTE_LEN {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, ImplError> {
+        if bytes.len() > T::LEN {
             Err(ImplError::ErrNodeBytesBadSize)
         } else {
-            let padding = HASH_BYTE_LEN - bytes.len();
-            let mut b = bytes.to_vec();
-            b.resize(bytes.len() + padding, 0);
+            let padding = T::LEN - bytes.len();
             let mut h = Self::hash_zero();
-            h.as_mut()[0..HASH_BYTE_LEN].copy_from_slice(&b.to_vec()[..]);
+            h.as_mut()[padding..].copy_from_slice(bytes);
             if Self::check_in_field(&h) {
                 Ok(h)
             } else {
@@ -89,44 +82,6 @@ impl<T: Hash> Hashable for AsHash<T> {
             Err(ImplError::ErrNodeBytesBadSize)
         }
     }
-
-    fn handling_elems_and_bytes32(flags: u32, bytes: &[[u8; 32]]) -> Result<Self, ImplError> {
-        let mut tmp = vec![];
-        let mut err = false;
-        for (i, byte) in bytes.iter().enumerate() {
-            if flags & (1 << i) != 0 {
-                tmp.push(Self(T::simple_hash_byte32(byte)));
-            } else {
-                let h = Self::hash_from_bytes(byte);
-                if h.is_ok() {
-                    tmp.push(h?);
-                } else {
-                    err = true;
-                    break;
-                }
-            }
-        }
-        if !err {
-            let domain = bytes.len() * HASH_DOMAIN_ELEMS_BASE + HASH_DOMAIN_BYTE32;
-            for _ in 0..bytes.len() - 1 {
-                let a = tmp.pop().unwrap_or_default();
-                let b = tmp.pop().unwrap_or_default();
-                let h = Self::hash_elems_with_domain(domain as u64, &a, &b);
-                if h.is_ok() {
-                    tmp.push(h?);
-                } else {
-                    err = true;
-                    break;
-                }
-            }
-        }
-
-        if !err {
-            Ok(tmp.pop().unwrap())
-        } else {
-            Err(ImplError::ErrNodeBytesBadSize)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -134,8 +89,7 @@ pub use tests::HashImpl;
 
 #[cfg(test)]
 mod tests {
-    use super::{HASH_BYTE_LEN, HASH_DOMAIN_BYTE32};
-    use crate::types::Hashable;
+    use crate::types::{Hashable, Node, TrieHashScheme};
 
     use ff::PrimeField;
     use halo2_proofs::pairing::bn256::Fr;
@@ -144,6 +98,8 @@ mod tests {
     lazy_static::lazy_static! {
         pub static ref POSEIDON_HASHER: poseidon::Poseidon<Fr, 9, 8> = Poseidon::<Fr, 9, 8>::new(8, 63);
     }
+
+    const HASH_BYTE_LEN: usize = 32;
 
     #[derive(Clone, Debug, Default, PartialEq)]
     pub struct Hash(pub(crate) [u8; HASH_BYTE_LEN]);
@@ -161,19 +117,17 @@ mod tests {
     }
 
     impl super::Hash for Hash {
+        const LEN: usize = HASH_BYTE_LEN;
+
         //todo replace with poseidon hash
-        fn simple_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: u64) -> Self {
+        fn simple_hash_scheme(a: [u8; 32], b: [u8; 32], domain: u64) -> Self {
             let mut hasher = POSEIDON_HASHER.clone();
             hasher.update(&[
-                Fr::from_repr(*a).unwrap(),
-                Fr::from_repr(*b).unwrap(),
+                Fr::from_repr(a).unwrap(),
+                Fr::from_repr(b).unwrap(),
                 Fr::from(domain),
             ]);
             Hash(hasher.squeeze().to_repr())
-        }
-
-        fn simple_hash_byte32(b: &[u8; 32]) -> Self {
-            Self::simple_hash_scheme(b, b, HASH_DOMAIN_BYTE32 as u64)
         }
 
         fn is_valid(&self) -> bool {
@@ -195,7 +149,7 @@ mod tests {
             h.as_mut()[i] = i as u8;
         }
         assert_eq!(h.to_bytes(), byte);
-        assert_eq!(HashImpl::hash_from_bytes(&byte).unwrap(), h);
+        assert_eq!(HashImpl::from_bytes(&byte).unwrap(), h);
     }
 
     #[test]
@@ -208,12 +162,12 @@ mod tests {
         for i in 0..8 {
             let ret = HashImpl::hash_elems_with_domain(
                 domain,
-                &HashImpl::hash_from_bytes(&bytes[2 * i]).unwrap(),
-                &HashImpl::hash_from_bytes(&bytes[2 * i + 1]).unwrap(),
+                &HashImpl::from_bytes(&bytes[2 * i]).unwrap(),
+                &HashImpl::from_bytes(&bytes[2 * i + 1]).unwrap(),
             );
             assert!(ret.is_ok());
         }
-        let ret = HashImpl::handling_elems_and_bytes32(65535, &bytes);
+        let ret = Node::<HashImpl>::handling_elems_and_bytes32(65535, &bytes);
         assert!(ret.is_ok());
     }
 
