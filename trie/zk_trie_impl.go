@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"sync"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
@@ -83,7 +84,7 @@ func NewZkTrieImplWithRoot(storage ZktrieDatabase, root *zkt.Hash, maxLevels int
 // Root returns the MerkleRoot
 func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
 	hashedDirtyStorage := make(map[zkt.Hash]*Node)
-	rootKey, err := mt.commit(mt.rootKey, hashedDirtyStorage)
+	rootKey, err := mt.commit(mt.rootKey, hashedDirtyStorage, new(sync.Mutex))
 	if err != nil {
 		return nil, err
 	}
@@ -272,28 +273,9 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 	return newParentNodeKey, nil
 }
 
-// persistNode adds a node into the MT and returns the node hash. Empty nodes are
-// not stored in the tree since they are all the same and assumed to always exist.
-func (mt *ZkTrieImpl) persistNode(n *Node) (*zkt.Hash, error) {
-	// verify that the ZkTrieImpl is writable
-	if !mt.writable {
-		return nil, ErrNotWritable
-	}
-	if n.Type == NodeTypeEmpty {
-		return n.NodeHash()
-	}
-	hash, err := n.NodeHash()
-	if err != nil {
-		return nil, err
-	}
-	v := n.CanonicalValue()
-	err = mt.db.Put(hash[:], v)
-	return hash, err
-}
-
 // Commit calculates the root for the entire trie and persist all the dirty nodes
 func (mt *ZkTrieImpl) Commit() error {
-	rootKey, err := mt.commit(mt.rootKey, nil)
+	rootKey, err := mt.commit(mt.rootKey, nil, new(sync.Mutex))
 	if err != nil {
 		return err
 	}
@@ -305,7 +287,7 @@ func (mt *ZkTrieImpl) Commit() error {
 }
 
 // commit calculates the commitment for the given sub trie and persists all dirty nodes
-func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*Node) (*zkt.Hash, error) {
+func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*Node, commitLock *sync.Mutex) (*zkt.Hash, error) {
 	if !mt.isDirtyNode(rootKey) {
 		return rootKey, nil
 	}
@@ -316,30 +298,42 @@ func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*N
 	}
 
 	switch root.Type {
+	case NodeTypeEmpty:
+		return &zkt.HashZero, nil
 	case NodeTypeLeaf_New:
 		// leaves are already hashed, we just need to persist it
 		break
 	case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
-		root.ChildL, err = mt.commit(root.ChildL, hashedDirtyNodes)
+		leftDone := make(chan struct{})
+		var leftErr error
+		go func() {
+			root.ChildL, leftErr = mt.commit(root.ChildL, hashedDirtyNodes, commitLock)
+			close(leftDone)
+		}()
+		root.ChildR, err = mt.commit(root.ChildR, hashedDirtyNodes, commitLock)
 		if err != nil {
 			return nil, err
 		}
-		root.ChildR, err = mt.commit(root.ChildR, hashedDirtyNodes)
-		if err != nil {
-			return nil, err
+		<-leftDone
+		if leftErr != nil {
+			return nil, leftErr
 		}
 	default:
 		return nil, errors.New(fmt.Sprint("unexpected node type", root.Type))
 	}
 
-	if hashedDirtyNodes == nil {
-		return mt.persistNode(root)
-	}
 	rootHash, err := root.NodeHash()
 	if err != nil {
 		return nil, err
 	}
-	hashedDirtyNodes[*rootHash] = root
+
+	commitLock.Lock()
+	defer commitLock.Unlock()
+	if hashedDirtyNodes != nil {
+		hashedDirtyNodes[*rootHash] = root
+	} else if err = mt.db.Put(rootHash[:], root.CanonicalValue()); err != nil {
+		return nil, err
+	}
 	return rootHash, nil
 }
 
