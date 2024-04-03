@@ -6,6 +6,7 @@ edition = "2021"
 version = "0.3.0"
 
 [workspace.dependencies]
+hex = "0.4"
 
 [package]
 name = "zktrie"
@@ -20,11 +21,12 @@ links = "zktrie"
 [dependencies]
 zktrie_rust = { path = "rs_zktrie"}
 
+
 [build-dependencies]
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 
 [dev-dependencies]
-hex = "0.4"
+hex.workspace = true
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-1201" }
 
