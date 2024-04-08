@@ -784,3 +784,19 @@ node [fontname=Monospace,fontsize=10,shape=box]
 	}
 	return err
 }
+
+// Copy creates a new independent zkTrie from the given trie
+func (mt *ZkTrieImpl) Copy() *ZkTrieImpl {
+	// Deep copy in-memory dirty nodes
+	newDirtyStorage := make(map[zkt.Hash]*Node, len(mt.dirtyStorage))
+	for key, dirtyNode := range mt.dirtyStorage {
+		newDirtyStorage[key] = dirtyNode.Copy()
+	}
+
+	newTrie := *mt
+	newTrie.dirtyIndex = new(big.Int).Set(mt.dirtyIndex)
+	newTrie.dirtyStorage = newDirtyStorage
+	newRootKey := *mt.rootKey
+	newTrie.rootKey = &newRootKey
+	return &newTrie
+}

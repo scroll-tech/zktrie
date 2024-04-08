@@ -140,17 +140,8 @@ func (t *ZkTrie) Commit() error {
 
 // Copy returns a copy of SecureBinaryTrie.
 func (t *ZkTrie) Copy() *ZkTrie {
-	err := t.tree.Commit()
-	if err != nil {
-		panic("commit failed in clone trie")
-	}
-
-	cpy, err := NewZkTrieImplWithRoot(t.tree.db, t.tree.rootKey, t.tree.maxLevels)
-	if err != nil {
-		panic("clone trie failed")
-	}
 	return &ZkTrie{
-		tree: cpy,
+		tree: t.tree.Copy(),
 	}
 }
 
