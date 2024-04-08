@@ -135,6 +135,66 @@ func (mt *ZkTrieImpl) TryUpdate(nodeKey *zkt.Hash, vFlag uint32, vPreimage []zkt
 	return nil
 }
 
+// pushLeaf recursively pushes an existing oldLeaf down until its path diverges
+// from newLeaf, at which point both leafs are stored, all while updating the
+// path. pushLeaf returns the node hash of the parent of the oldLeaf and newLeaf
+func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
+	pathNewLeaf []bool, pathOldLeaf []bool) (*zkt.Hash, error) {
+	if lvl > mt.maxLevels-2 {
+		return nil, ErrReachedMaxLevel
+	}
+	var newParentNode *Node
+	if pathNewLeaf[lvl] == pathOldLeaf[lvl] { // We need to go deeper!
+		// notice the node corresponding to return hash is always branch
+		nextNodeHash, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
+		if err != nil {
+			return nil, err
+		}
+		if pathNewLeaf[lvl] { // go right
+			newParentNode = NewParentNode(NodeTypeBranch_1, &zkt.HashZero, nextNodeHash)
+		} else { // go left
+			newParentNode = NewParentNode(NodeTypeBranch_2, nextNodeHash, &zkt.HashZero)
+		}
+
+		newParentNodeKey := mt.newDirtyNodeKey()
+		mt.dirtyStorage[*newParentNodeKey] = newParentNode
+		return newParentNodeKey, nil
+	}
+	oldLeafHash, err := oldLeaf.NodeHash()
+	if err != nil {
+		return nil, err
+	}
+	newLeafHash, err := newLeaf.NodeHash()
+	if err != nil {
+		return nil, err
+	}
+
+	if pathNewLeaf[lvl] {
+		newParentNode = NewParentNode(NodeTypeBranch_0, oldLeafHash, newLeafHash)
+	} else {
+		newParentNode = NewParentNode(NodeTypeBranch_0, newLeafHash, oldLeafHash)
+	}
+	// We can add newLeaf now.  We don't need to add oldLeaf because it's
+	// already in the tree.
+	mt.dirtyStorage[*newLeafHash] = newLeaf
+	newParentNodeKey := mt.newDirtyNodeKey()
+	mt.dirtyStorage[*newParentNodeKey] = newParentNode
+	return newParentNodeKey, nil
+}
+
+// Commit calculates the root for the entire trie and persist all the dirty nodes
+func (mt *ZkTrieImpl) Commit() error {
+	rootKey, err := mt.commit(mt.rootKey, nil, new(sync.Mutex))
+	if err != nil {
+		return err
+	}
+
+	mt.rootKey = rootKey
+	mt.dirtyIndex = big.NewInt(0)
+	mt.dirtyStorage = make(map[zkt.Hash]*Node)
+	return mt.db.Put(dbKeyRootNode, append([]byte{byte(DBEntryTypeRoot)}, mt.rootKey[:]...))
+}
+
 // addLeaf recursively adds a newLeaf in the MT while updating the path, and returns the key
 // of the new added leaf.
 func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeKey *zkt.Hash,
@@ -224,66 +284,6 @@ func (mt *ZkTrieImpl) newDirtyNodeKey() *zkt.Hash {
 func (mt *ZkTrieImpl) isDirtyNode(nodeKey *zkt.Hash) bool {
 	_, found := mt.dirtyStorage[*nodeKey]
 	return found
-}
-
-// pushLeaf recursively pushes an existing oldLeaf down until its path diverges
-// from newLeaf, at which point both leafs are stored, all while updating the
-// path. pushLeaf returns the node hash of the parent of the oldLeaf and newLeaf
-func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
-	pathNewLeaf []bool, pathOldLeaf []bool) (*zkt.Hash, error) {
-	if lvl > mt.maxLevels-2 {
-		return nil, ErrReachedMaxLevel
-	}
-	var newParentNode *Node
-	if pathNewLeaf[lvl] == pathOldLeaf[lvl] { // We need to go deeper!
-		// notice the node corresponding to return hash is always branch
-		nextNodeHash, err := mt.pushLeaf(newLeaf, oldLeaf, lvl+1, pathNewLeaf, pathOldLeaf)
-		if err != nil {
-			return nil, err
-		}
-		if pathNewLeaf[lvl] { // go right
-			newParentNode = NewParentNode(NodeTypeBranch_1, &zkt.HashZero, nextNodeHash)
-		} else { // go left
-			newParentNode = NewParentNode(NodeTypeBranch_2, nextNodeHash, &zkt.HashZero)
-		}
-
-		newParentNodeKey := mt.newDirtyNodeKey()
-		mt.dirtyStorage[*newParentNodeKey] = newParentNode
-		return newParentNodeKey, nil
-	}
-	oldLeafHash, err := oldLeaf.NodeHash()
-	if err != nil {
-		return nil, err
-	}
-	newLeafHash, err := newLeaf.NodeHash()
-	if err != nil {
-		return nil, err
-	}
-
-	if pathNewLeaf[lvl] {
-		newParentNode = NewParentNode(NodeTypeBranch_0, oldLeafHash, newLeafHash)
-	} else {
-		newParentNode = NewParentNode(NodeTypeBranch_0, newLeafHash, oldLeafHash)
-	}
-	// We can add newLeaf now.  We don't need to add oldLeaf because it's
-	// already in the tree.
-	mt.dirtyStorage[*newLeafHash] = newLeaf
-	newParentNodeKey := mt.newDirtyNodeKey()
-	mt.dirtyStorage[*newParentNodeKey] = newParentNode
-	return newParentNodeKey, nil
-}
-
-// Commit calculates the root for the entire trie and persist all the dirty nodes
-func (mt *ZkTrieImpl) Commit() error {
-	rootKey, err := mt.commit(mt.rootKey, nil, new(sync.Mutex))
-	if err != nil {
-		return err
-	}
-
-	mt.rootKey = rootKey
-	mt.dirtyIndex = big.NewInt(0)
-	mt.dirtyStorage = make(map[zkt.Hash]*Node)
-	return mt.db.Put(dbKeyRootNode, append([]byte{byte(DBEntryTypeRoot)}, mt.rootKey[:]...))
 }
 
 // commit calculates the commitment for the given sub trie and persists all dirty nodes
