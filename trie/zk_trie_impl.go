@@ -84,7 +84,7 @@ func NewZkTrieImplWithRoot(storage ZktrieDatabase, root *zkt.Hash, maxLevels int
 // Root returns the MerkleRoot
 func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
 	hashedDirtyStorage := make(map[zkt.Hash]*Node)
-	rootKey, err := mt.commit(mt.rootKey, hashedDirtyStorage, new(sync.Mutex))
+	rootKey, err := mt.calcCommitment(mt.rootKey, hashedDirtyStorage, new(sync.Mutex))
 	if err != nil {
 		return nil, err
 	}
@@ -184,13 +184,18 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 
 // Commit calculates the root for the entire trie and persist all the dirty nodes
 func (mt *ZkTrieImpl) Commit() error {
-	rootKey, err := mt.commit(mt.rootKey, nil, new(sync.Mutex))
-	if err != nil {
-		return err
+	// check if there is any node in dirty storage that we haven't calculated the hash for
+	if mt.dirtyIndex.Cmp(big.NewInt(0)) != 0 {
+		if _, err := mt.Root(); err != nil {
+			return err
+		}
 	}
 
-	mt.rootKey = rootKey
-	mt.dirtyIndex = big.NewInt(0)
+	for key, node := range mt.dirtyStorage {
+		if err := mt.db.Put(key[:], node.CanonicalValue()); err != nil {
+			return err
+		}
+	}
 	mt.dirtyStorage = make(map[zkt.Hash]*Node)
 	return mt.db.Put(dbKeyRootNode, append([]byte{byte(DBEntryTypeRoot)}, mt.rootKey[:]...))
 }
@@ -286,8 +291,8 @@ func (mt *ZkTrieImpl) isDirtyNode(nodeKey *zkt.Hash) bool {
 	return found
 }
 
-// commit calculates the commitment for the given sub trie and persists all dirty nodes
-func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*Node, commitLock *sync.Mutex) (*zkt.Hash, error) {
+// calcCommitment calculates the commitment for the given sub trie
+func (mt *ZkTrieImpl) calcCommitment(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*Node, commitLock *sync.Mutex) (*zkt.Hash, error) {
 	if !mt.isDirtyNode(rootKey) {
 		return rootKey, nil
 	}
@@ -307,10 +312,10 @@ func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*N
 		leftDone := make(chan struct{})
 		var leftErr error
 		go func() {
-			root.ChildL, leftErr = mt.commit(root.ChildL, hashedDirtyNodes, commitLock)
+			root.ChildL, leftErr = mt.calcCommitment(root.ChildL, hashedDirtyNodes, commitLock)
 			close(leftDone)
 		}()
-		root.ChildR, err = mt.commit(root.ChildR, hashedDirtyNodes, commitLock)
+		root.ChildR, err = mt.calcCommitment(root.ChildR, hashedDirtyNodes, commitLock)
 		if err != nil {
 			return nil, err
 		}
@@ -329,11 +334,7 @@ func (mt *ZkTrieImpl) commit(rootKey *zkt.Hash, hashedDirtyNodes map[zkt.Hash]*N
 
 	commitLock.Lock()
 	defer commitLock.Unlock()
-	if hashedDirtyNodes != nil {
-		hashedDirtyNodes[*rootHash] = root
-	} else if err = mt.db.Put(rootHash[:], root.CanonicalValue()); err != nil {
-		return nil, err
-	}
+	hashedDirtyNodes[*rootHash] = root
 	return rootHash, nil
 }
 
