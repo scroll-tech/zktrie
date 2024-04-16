@@ -96,6 +96,7 @@ func TestMerkleTree_Init(t *testing.T) {
 		assert.NoError(t, err)
 		mt1Root, err = mt1.Root()
 		assert.NoError(t, err)
+		assert.Equal(t, "0539c6b1cac741eb1e98b2c271733d1e6f0fad557228f6b039d894b0a627c8d9", mt1Root.Hex())
 		assert.NoError(t, mt1.Commit())
 
 		mt2, err := NewZkTrieImplWithRoot(db, mt1Root, maxLevels)
