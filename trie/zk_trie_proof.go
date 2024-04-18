@@ -66,7 +66,9 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 			return ErrInvalidNodeFound
 		}
 
-		nodes = append(nodes, n)
+		nCopy := n.Copy()
+		nCopy.nodeHash = tn
+		nodes = append(nodes, nCopy)
 		if finished {
 			break
 		}
