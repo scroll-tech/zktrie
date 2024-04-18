@@ -1,0 +1,24 @@
+[package]
+name = "zktrie_rust"
+authors = ["xgao@zoyoe.com"]
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "zktrie_rust"
+
+[dependencies]
+strum = "0.24"
+strum_macros = "0.24"
+lazy_static = "1.4"
+num-derive = "0.3"
+num-traits = "0.2"
+num = "0.4"
+hex.workspace = true
+
+[dev-dependencies]
+ff = "0.12"
+poseidon = { git = "https://github.com/lanbones/poseidon" }
+halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", default-features = true }

@@ -1,0 +1,4 @@
+/target
+/_obj
+Cargo.lock
+*.exe

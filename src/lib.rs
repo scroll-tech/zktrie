@@ -1,352 +1,48 @@
-use std::ffi::{self, c_char, c_int, c_void};
-use std::marker::{PhantomData, PhantomPinned};
-use std::{fmt, rc::Rc};
+mod constants;
+pub mod go_lib;
+pub mod rs_lib;
 
-#[repr(C)]
-struct MemoryDb {
-    _data: [u8; 0],
-    _marker: PhantomData<(*mut u8, PhantomPinned)>,
-}
-#[repr(C)]
-struct Trie {
-    _data: [u8; 0],
-    _marker: PhantomData<(*mut u8, PhantomPinned)>,
-}
-#[repr(C)]
-struct TrieNode {
-    _data: [u8; 0],
-    _marker: PhantomData<(*mut u8, PhantomPinned)>,
-}
+pub use constants::*;
+pub type SimpleHashSchemeFn = fn(&[u8; 32], &[u8; 32], &[u8; 32]) -> Option<[u8; 32]>;
 
-pub const HASHLEN: usize = 32;
-pub const FIELDSIZE: usize = 32;
-#[cfg(not(feature = "dual_codehash"))]
-pub const ACCOUNTFIELDS: usize = 4;
-#[cfg(feature = "dual_codehash")]
-pub const ACCOUNTFIELDS: usize = 5;
-pub const ACCOUNTSIZE: usize = FIELDSIZE * ACCOUNTFIELDS;
-pub type Hash = [u8; HASHLEN];
-pub type StoreData = [u8; FIELDSIZE];
-pub type AccountData = [[u8; FIELDSIZE]; ACCOUNTFIELDS];
+#[cfg(not(feature = "rs_zktrie"))]
+pub use go_lib::*;
+#[cfg(feature = "rs_zktrie")]
+pub use rs_lib::*;
 
-pub type HashScheme = extern "C" fn(*const u8, *const u8, *const u8, *mut u8) -> *const i8;
-type ProveCallback = extern "C" fn(*const u8, c_int, *mut c_void);
+use std::sync::OnceLock;
+static HASHSCHEME: OnceLock<SimpleHashSchemeFn> = OnceLock::new();
 
-#[link(name = "zktrie")]
-extern "C" {
-    fn InitHashScheme(f: HashScheme);
-    fn NewMemoryDb() -> *mut MemoryDb;
-    fn InitDbByNode(db: *mut MemoryDb, data: *const u8, sz: c_int) -> *const c_char;
-    fn NewZkTrie(root: *const u8, db: *const MemoryDb) -> *mut Trie;
-    fn FreeMemoryDb(db: *mut MemoryDb);
-    fn FreeZkTrie(trie: *mut Trie);
-    fn FreeBuffer(p: *const c_void);
-    fn TrieGetSize(trie: *const Trie, key: *const u8, key_sz: c_int, value_sz: c_int) -> *const u8;
-    fn TrieRoot(trie: *const Trie) -> *const u8;
-    fn TrieUpdate(
-        trie: *mut Trie,
-        key: *const u8,
-        key_sz: c_int,
-        val: *const u8,
-        val_sz: c_int,
-    ) -> *const c_char;
-    fn TrieDelete(trie: *mut Trie, key: *const u8, key_sz: c_int);
-    fn TrieProve(
-        trie: *const Trie,
-        key: *const u8,
-        key_sz: c_int,
-        cb: ProveCallback,
-        param: *mut c_void,
-    ) -> *const c_char;
-    fn NewTrieNode(data: *const u8, data_sz: c_int) -> *const TrieNode;
-    fn FreeTrieNode(node: *const TrieNode);
-    fn TrieNodeHash(node: *const TrieNode) -> *const u8;
-    fn TrieLeafNodeValueHash(node: *const TrieNode) -> *const u8;
-    fn TrieNodeIsTip(node: *const TrieNode) -> c_int;
-    fn TrieNodeData(node: *const TrieNode, value_sz: c_int) -> *const u8;
+pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
+    go_lib::init_hash_scheme(c_hash_scheme_adapter);
+    HASHSCHEME.set(f).unwrap_or_default()
 }
 
-pub fn init_hash_scheme(f: HashScheme) {
-    unsafe { InitHashScheme(f) }
-}
+extern "C" fn c_hash_scheme_adapter(
+    a: *const u8,
+    b: *const u8,
+    domain: *const u8,
+    out: *mut u8,
+) -> *const i8 {
+    use std::slice;
+    let a: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
+    let b: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
+    let domain: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) }).expect("length specified");
+    let out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
-pub struct ErrString(*const c_char);
+    let h = HASHSCHEME
+        .get()
+        .expect("if it is called hash scheme must be initied")(&a, &b, &domain);
 
-impl Drop for ErrString {
-    fn drop(&mut self) {
-        unsafe { FreeBuffer(self.0.cast()) };
-    }
-}
-
-impl fmt::Debug for ErrString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.to_string().fmt(f)
-    }
-}
-
-impl From<*const c_char> for ErrString {
-    fn from(src: *const c_char) -> Self {
-        Self(src)
-    }
-}
-
-impl ToString for ErrString {
-    fn to_string(&self) -> String {
-        let ret = unsafe { ffi::CStr::from_ptr(self.0).to_str() };
-        ret.map(String::from).unwrap_or_else(|_| {
-            String::from("error string include invalid char and can not be displayed")
-        })
-    }
-}
-
-fn must_get_const_bytes<const T: usize>(p: *const u8) -> [u8; T] {
-    let bytes = unsafe { std::slice::from_raw_parts(p, T) };
-    let bytes = bytes
-        .try_into()
-        .expect("the buf has been set to specified bytes");
-    unsafe { FreeBuffer(p.cast()) }
-    bytes
-}
-
-fn must_get_hash(p: *const u8) -> Hash {
-    must_get_const_bytes::<HASHLEN>(p)
-}
-
-pub struct ZkMemoryDb {
-    db: *mut MemoryDb,
-}
-
-impl Drop for ZkMemoryDb {
-    fn drop(&mut self) {
-        unsafe { FreeMemoryDb(self.db) };
-    }
-}
-
-pub struct ZkTrieNode {
-    trie_node: *const TrieNode,
-}
-
-impl Drop for ZkTrieNode {
-    fn drop(&mut self) {
-        unsafe { FreeTrieNode(self.trie_node) };
-    }
-}
-
-impl ZkTrieNode {
-    pub fn parse(data: &[u8]) -> Result<Self, String> {
-        let trie_node = unsafe { NewTrieNode(data.as_ptr(), c_int::try_from(data.len()).unwrap()) };
-        if trie_node.is_null() {
-            Err(format!("Can not parse {data:#x?}"))
-        } else {
-            Ok(Self { trie_node })
-        }
-    }
-
-    pub fn node_hash(&self) -> Hash {
-        must_get_hash(unsafe { TrieNodeHash(self.trie_node) })
-    }
-
-    pub fn is_tip(&self) -> bool {
-        let is_tip = unsafe { TrieNodeIsTip(self.trie_node) };
-        is_tip != 0
-    }
-
-    pub fn as_account(&self) -> Option<AccountData> {
-        if self.is_tip() {
-            let ret = unsafe { TrieNodeData(self.trie_node, ACCOUNTSIZE as i32) };
-            if ret.is_null() {
-                None
-            } else {
-                let ret_byte = must_get_const_bytes(ret);
-                unsafe {
-                    Some(std::mem::transmute::<
-                        [u8; FIELDSIZE * ACCOUNTFIELDS],
-                        AccountData,
-                    >(ret_byte))
-                }
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn as_storage(&self) -> Option<StoreData> {
-        if self.is_tip() {
-            let ret = unsafe { TrieNodeData(self.trie_node, 32) };
-            if ret.is_null() {
-                None
-            } else {
-                Some(must_get_const_bytes::<32>(ret))
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn value_hash(&self) -> Option<Hash> {
-        let key_p = unsafe { TrieLeafNodeValueHash(self.trie_node) };
-        if key_p.is_null() {
-            None
-        } else {
-            Some(must_get_hash(key_p))
-        }
-    }
-}
-
-pub struct ZkTrie {
-    trie: *mut Trie,
-    binding_db: Rc<ZkMemoryDb>,
-}
-
-impl Drop for ZkTrie {
-    fn drop(&mut self) {
-        unsafe { FreeZkTrie(self.trie) };
-    }
-}
-
-impl Clone for ZkTrie {
-    fn clone(&self) -> Self {
-        self.binding_db
-            .new_trie(&self.root())
-            .expect("valid under clone")
-    }
-}
-
-impl ZkMemoryDb {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {
-            db: unsafe { NewMemoryDb() },
-        })
-    }
-
-    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
-        let ret_ptr = unsafe { InitDbByNode(self.db, data.as_ptr(), data.len() as c_int) };
-        if ret_ptr.is_null() {
-            Ok(())
-        } else {
-            Err(ret_ptr.into())
-        }
-    }
-
-    // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie> {
-        let ret = unsafe { NewZkTrie(root.as_ptr(), self.db) };
-
-        if ret.is_null() {
-            None
-        } else {
-            Some(ZkTrie {
-                trie: ret,
-                binding_db: self.clone(),
-            })
-        }
-    }
-}
-
-impl ZkTrie {
-    extern "C" fn prove_callback(data: *const u8, data_sz: c_int, out_p: *mut c_void) {
-        let output = unsafe {
-            out_p
-                .cast::<Vec<Vec<u8>>>()
-                .as_mut()
-                .expect("callback parameter can not be zero")
-        };
-        let buf = unsafe { std::slice::from_raw_parts(data, data_sz as usize) };
-        output.push(Vec::from(buf))
-    }
-
-    pub fn root(&self) -> Hash {
-        must_get_hash(unsafe { TrieRoot(self.trie) })
-    }
-
-    pub fn get_db(&self) -> Rc<ZkMemoryDb> {
-        self.binding_db.clone()
-    }
-
-    // all errors are reduced to "not found"
-    fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
-        let ret = unsafe { TrieGetSize(self.trie, key.as_ptr(), key.len() as c_int, T as c_int) };
-
-        if ret.is_null() {
-            None
-        } else {
-            Some(must_get_const_bytes::<T>(ret))
-        }
-    }
-
-    // get value from storage trie
-    pub fn get_store(&self, key: &[u8]) -> Option<StoreData> {
-        self.get::<32>(key)
-    }
-
-    // get account data from account trie
-    pub fn get_account(&self, key: &[u8]) -> Option<AccountData> {
-        self.get::<ACCOUNTSIZE>(key).map(|arr| unsafe {
-            std::mem::transmute::<[u8; FIELDSIZE * ACCOUNTFIELDS], AccountData>(arr)
-        })
-    }
-
-    // build prove array for mpt path
-    pub fn prove(&self, key: &[u8]) -> Result<Vec<Vec<u8>>, ErrString> {
-        let mut output: Vec<Vec<u8>> = Vec::new();
-        let ptr: *mut Vec<Vec<u8>> = &mut output;
-
-        let ret_ptr = unsafe {
-            TrieProve(
-                self.trie,
-                key.as_ptr(),
-                key.len() as c_int,
-                Self::prove_callback,
-                ptr.cast(),
-            )
-        };
-        if ret_ptr.is_null() {
-            Ok(output)
-        } else {
-            Err(ret_ptr.into())
-        }
-    }
-
-    fn update<const T: usize>(&mut self, key: &[u8], value: &[u8; T]) -> Result<(), ErrString> {
-        let ret_ptr = unsafe {
-            TrieUpdate(
-                self.trie,
-                key.as_ptr(),
-                key.len() as c_int,
-                value.as_ptr(),
-                T as c_int,
-            )
-        };
-        if ret_ptr.is_null() {
-            Ok(())
-        } else {
-            Err(ret_ptr.into())
-        }
-    }
-
-    pub fn update_store(&mut self, key: &[u8], value: &StoreData) -> Result<(), ErrString> {
-        self.update(key, value)
-    }
-
-    pub fn update_account(
-        &mut self,
-        key: &[u8],
-        acc_fields: &AccountData,
-    ) -> Result<(), ErrString> {
-        let acc_buf: &[u8; FIELDSIZE * ACCOUNTFIELDS] = unsafe {
-            let ptr = acc_fields.as_ptr();
-            ptr.cast::<[u8; FIELDSIZE * ACCOUNTFIELDS]>()
-                .as_ref()
-                .expect("casted ptr can not be null")
-        };
-
-        self.update(key, acc_buf)
-    }
-
-    pub fn delete(&mut self, key: &[u8]) {
-        unsafe {
-            TrieDelete(self.trie, key.as_ptr(), key.len() as c_int);
-        }
+    static HASH_OUT_ERROR: &str = "hash scheme can not output";
+    if let Some(h) = h {
+        out.copy_from_slice(&h);
+        std::ptr::null()
+    } else {
+        HASH_OUT_ERROR.as_ptr().cast()
     }
 }
 
@@ -359,62 +55,36 @@ mod tests {
     use halo2_proofs::halo2curves::group::ff::PrimeField;
     use poseidon_circuit::Hashable;
 
-    static FILED_ERROR_READ: &str = "invalid input field";
-    static FILED_ERROR_OUT: &str = "output field fail";
+    fn poseidon_hash_scheme(a: &[u8; 32], b: &[u8; 32], domain: &[u8; 32]) -> Option<[u8; 32]> {
+        let fa = Fr::from_bytes(a);
+        let fa = if fa.is_some().into() {
+            fa.unwrap()
+        } else {
+            return None;
+        };
+        let fb = Fr::from_bytes(b);
+        let fb = if fb.is_some().into() {
+            fb.unwrap()
+        } else {
+            return None;
+        };
+        let fdomain = Fr::from_bytes(domain);
+        let fdomain = if fdomain.is_some().into() {
+            fdomain.unwrap()
+        } else {
+            return None;
+        };
+        Some(Fr::hash_with_domain([fa, fb], fdomain).to_repr())
+    }
 
     #[link(name = "zktrie")]
     extern "C" {
         fn TestHashScheme();
     }
 
-    extern "C" fn hash_scheme(
-        a: *const u8,
-        b: *const u8,
-        domain: *const u8,
-        out: *mut u8,
-    ) -> *const i8 {
-        use std::slice;
-        let a: [u8; 32] =
-            TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
-        let b: [u8; 32] =
-            TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
-        let domain: [u8; 32] = TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) })
-            .expect("length specified");
-        let out = unsafe { slice::from_raw_parts_mut(out, 32) };
-
-        let fa = Fr::from_bytes(&a);
-        let fa = if fa.is_some().into() {
-            fa.unwrap()
-        } else {
-            return FILED_ERROR_READ.as_ptr().cast();
-        };
-        let fb = Fr::from_bytes(&b);
-        let fb = if fb.is_some().into() {
-            fb.unwrap()
-        } else {
-            return FILED_ERROR_READ.as_ptr().cast();
-        };
-        let fdomain = Fr::from_bytes(&domain);
-        let fdomain = if fdomain.is_some().into() {
-            fdomain.unwrap()
-        } else {
-            return FILED_ERROR_READ.as_ptr().cast();
-        };
-
-        let h = Fr::hash_with_domain([fa, fb], fdomain);
-
-        let repr_h = h.to_repr();
-        if repr_h.len() == 32 {
-            out.copy_from_slice(repr_h.as_ref());
-            std::ptr::null()
-        } else {
-            FILED_ERROR_OUT.as_ptr().cast()
-        }
-    }
-
     #[test]
     fn hash_works() {
-        init_hash_scheme(hash_scheme);
+        init_hash_scheme_simple(poseidon_hash_scheme);
         unsafe {
             TestHashScheme();
         }
@@ -467,7 +137,7 @@ mod tests {
 
     #[test]
     fn node_parse() {
-        init_hash_scheme(hash_scheme);
+        init_hash_scheme_simple(poseidon_hash_scheme);
 
         let nd = ZkTrieNode::parse(&hex::decode("04139a6815e4d1fb05c969e6a8036aa5cc06b88751d713326d681bd90448ea64c905080000000000000000000000000000000000000000000000000874000000000000000000000000000000000000000000000000000000000000000000000000000000002c3c54d9c8b2d411ccd6458eaea5c644392b097de2ee416f5c923f3b01c7b8b80fabb5b0f58ec2922e2969f4dadb6d1395b49ecd40feff93e01212ae848355d410e77cae1c507f967948c6cd114e74ed65f662e365c7d6993e97f78ce898252800").unwrap());
         let nd = nd.unwrap();
@@ -485,7 +155,7 @@ mod tests {
 
     #[test]
     fn trie_works() {
-        init_hash_scheme(hash_scheme);
+        init_hash_scheme_simple(poseidon_hash_scheme);
         let mut db = ZkMemoryDb::new();
 
         for bts in EXAMPLE {

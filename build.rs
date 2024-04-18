@@ -18,9 +18,7 @@ fn main() {
     }
     build.buildmode(build_mode);
     // Build
-    if let Err(e) = build
-        .try_compile(lib_name)
-    {
+    if let Err(e) = build.try_compile(lib_name) {
         // The error type is private so have to check the error string
         if format!("{e}").starts_with("Failed to find tool.") {
             fail(
