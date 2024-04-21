@@ -331,3 +331,12 @@ func (n *Node) String() string {
 		return "Invalid Node"
 	}
 }
+
+// Copy creates a new Node instance from the given node
+func (n *Node) Copy() *Node {
+	newNode, err := NewNodeFromBytes(n.Value())
+	if err != nil {
+		panic("failed to copy trie node")
+	}
+	return newNode
+}

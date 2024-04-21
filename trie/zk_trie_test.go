@@ -34,7 +34,7 @@ func TestNewZkTrie(t *testing.T) {
 	zkTrie, err := NewZkTrie(root, db)
 	assert.NoError(t, err)
 	assert.Equal(t, zkt.HashZero.Bytes(), zkTrie.Hash())
-	assert.Equal(t, zkt.HashZero.Bytes(), zkTrie.Tree().rootHash.Bytes())
+	assert.Equal(t, zkt.HashZero.Bytes(), zkTrie.Tree().rootKey.Bytes())
 
 	root = zkt.Byte32{1}
 	zkTrie, err = NewZkTrie(root, db)
