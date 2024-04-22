@@ -28,11 +28,14 @@ func DecodeSMTProof(data []byte) (*Node, error) {
 
 // Prove constructs a merkle proof for SMT, it respect the protocol used by the ethereum-trie
 // but save the node data with a compact form
-func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Node) error) error {
+func (mt *ZkTrieImpl) Prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Node) error) error {
 	// force root hash calculation if needed
 	if _, err := mt.Root(); err != nil {
 		return err
 	}
+
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
 
 	path := getPath(mt.maxLevels, kHash[:])
 	var nodes []*Node

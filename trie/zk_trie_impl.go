@@ -47,6 +47,7 @@ var (
 
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
 type ZkTrieImpl struct {
+	lock      sync.RWMutex
 	db        ZktrieDatabase
 	rootKey   *zkt.Hash
 	writable  bool
@@ -83,6 +84,8 @@ func NewZkTrieImplWithRoot(storage ZktrieDatabase, root *zkt.Hash, maxLevels int
 
 // Root returns the MerkleRoot
 func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
+	mt.lock.Lock()
+	defer mt.lock.Unlock()
 	// short circuit if there are no nodes to hash
 	if mt.dirtyIndex.Cmp(big.NewInt(0)) == 0 {
 		return mt.rootKey, nil
@@ -98,7 +101,7 @@ func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
 	mt.dirtyIndex = big.NewInt(0)
 	mt.dirtyStorage = hashedDirtyStorage
 	if mt.Debug {
-		_, err := mt.GetNode(mt.rootKey)
+		_, err := mt.getNode(mt.rootKey)
 		if err != nil {
 			panic(fmt.Errorf("load trie root failed hash %v", mt.rootKey.Bytes()))
 		}
@@ -126,6 +129,9 @@ func (mt *ZkTrieImpl) TryUpdate(nodeKey *zkt.Hash, vFlag uint32, vPreimage []zkt
 
 	newLeafNode := NewLeafNode(nodeKey, vFlag, vPreimage)
 	path := getPath(mt.maxLevels, nodeKey[:])
+
+	mt.lock.Lock()
+	defer mt.lock.Unlock()
 
 	newRootKey, _, err := mt.addLeaf(newLeafNode, mt.rootKey, 0, path)
 	// sanity check
@@ -194,6 +200,9 @@ func (mt *ZkTrieImpl) Commit() error {
 		return err
 	}
 
+	mt.lock.Lock()
+	defer mt.lock.Unlock()
+
 	for key, node := range mt.dirtyStorage {
 		if err := mt.db.Put(key[:], node.CanonicalValue()); err != nil {
 			return err
@@ -211,7 +220,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeKey *zkt.Hash,
 	if lvl > mt.maxLevels-1 {
 		return nil, false, ErrReachedMaxLevel
 	}
-	n, err := mt.GetNode(currNodeKey)
+	n, err := mt.getNode(currNodeKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -300,7 +309,7 @@ func (mt *ZkTrieImpl) calcCommitment(rootKey *zkt.Hash, hashedDirtyNodes map[zkt
 		return rootKey, nil
 	}
 
-	root, err := mt.GetNode(rootKey)
+	root, err := mt.getNode(rootKey)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +358,7 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 	//sanity check
 	lastNodeType := NodeTypeBranch_3
 	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.GetNode(nextKey)
+		n, err := mt.getNode(nextKey)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -395,6 +404,8 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 // The value bytes must not be modified by the caller.
 // If a node was not found in the database, a MissingNodeError is returned.
 func (mt *ZkTrieImpl) TryGet(nodeKey *zkt.Hash) ([]byte, error) {
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
 
 	node, _, err := mt.tryGet(nodeKey)
 	if err == ErrKeyNotFound {
@@ -426,6 +437,10 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 	if !zkt.CheckBigIntInField(nodeKey.BigInt()) {
 		return ErrInvalidField
 	}
+
+	mt.lock.Lock()
+	defer mt.lock.Unlock()
+
 	newRootKey, _, err := mt.tryDelete(mt.rootKey, nodeKey, getPath(mt.maxLevels, nodeKey[:]))
 	if err != nil {
 		return err
@@ -435,7 +450,7 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 }
 
 func (mt *ZkTrieImpl) tryDelete(rootKey *zkt.Hash, nodeKey *zkt.Hash, path []bool) (*zkt.Hash, bool, error) {
-	root, err := mt.GetNode(rootKey)
+	root, err := mt.getNode(rootKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -505,6 +520,9 @@ func (mt *ZkTrieImpl) tryDelete(rootKey *zkt.Hash, nodeKey *zkt.Hash, path []boo
 // GetLeafNode is more underlying method than TryGet, which obtain an leaf node
 // or nil if not exist
 func (mt *ZkTrieImpl) GetLeafNode(nodeKey *zkt.Hash) (*Node, error) {
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
+
 	n, _, err := mt.tryGet(nodeKey)
 	return n, err
 }
@@ -513,6 +531,13 @@ func (mt *ZkTrieImpl) GetLeafNode(nodeKey *zkt.Hash) (*Node, error) {
 // tree; they are all the same and assumed to always exist.
 // <del>for non exist key, return (NewEmptyNode(), nil)</del>
 func (mt *ZkTrieImpl) GetNode(nodeHash *zkt.Hash) (*Node, error) {
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
+
+	return mt.getNode(nodeHash)
+}
+
+func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
 	if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
 		return NewEmptyNode(), nil
 	}
@@ -698,7 +723,7 @@ func (proof *Proof) rootFromProof(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error
 
 // walk is a helper recursive function to iterate over all tree branches
 func (mt *ZkTrieImpl) walk(nodeHash *zkt.Hash, f func(*Node)) error {
-	n, err := mt.GetNode(nodeHash)
+	n, err := mt.getNode(nodeHash)
 	if err != nil {
 		return err
 	}
@@ -729,6 +754,9 @@ func (mt *ZkTrieImpl) Walk(rootHash *zkt.Hash, f func(*Node)) error {
 			return err
 		}
 	}
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
+
 	err = mt.walk(rootHash, f)
 	return err
 }
@@ -744,6 +772,9 @@ func (mt *ZkTrieImpl) GraphViz(w io.Writer, rootHash *zkt.Hash) error {
 		}
 	}
 
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
+
 	fmt.Fprintf(w,
 		"--------\nGraphViz of the ZkTrieImpl with RootHash "+rootHash.BigInt().String()+"\n")
 
@@ -752,7 +783,7 @@ node [fontname=Monospace,fontsize=10,shape=box]
 `)
 	cnt := 0
 	var errIn error
-	err := mt.Walk(rootHash, func(n *Node) {
+	err := mt.walk(rootHash, func(n *Node) {
 		hash, err := n.NodeHash()
 		if err != nil {
 			errIn = err
@@ -791,16 +822,23 @@ node [fontname=Monospace,fontsize=10,shape=box]
 
 // Copy creates a new independent zkTrie from the given trie
 func (mt *ZkTrieImpl) Copy() *ZkTrieImpl {
+	mt.lock.RLock()
+	defer mt.lock.RUnlock()
+
 	// Deep copy in-memory dirty nodes
 	newDirtyStorage := make(map[zkt.Hash]*Node, len(mt.dirtyStorage))
 	for key, dirtyNode := range mt.dirtyStorage {
 		newDirtyStorage[key] = dirtyNode.Copy()
 	}
 
-	newTrie := *mt
-	newTrie.dirtyIndex = new(big.Int).Set(mt.dirtyIndex)
-	newTrie.dirtyStorage = newDirtyStorage
 	newRootKey := *mt.rootKey
-	newTrie.rootKey = &newRootKey
-	return &newTrie
+	return &ZkTrieImpl{
+		db:           mt.db,
+		maxLevels:    mt.maxLevels,
+		writable:     mt.writable,
+		dirtyIndex:   new(big.Int).Set(mt.dirtyIndex),
+		dirtyStorage: newDirtyStorage,
+		rootKey:      &newRootKey,
+		Debug:        mt.Debug,
+	}
 }
