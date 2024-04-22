@@ -83,6 +83,11 @@ func NewZkTrieImplWithRoot(storage ZktrieDatabase, root *zkt.Hash, maxLevels int
 
 // Root returns the MerkleRoot
 func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
+	// short circuit if there are no nodes to hash
+	if mt.dirtyIndex.Cmp(big.NewInt(0)) == 0 {
+		return mt.rootKey, nil
+	}
+
 	hashedDirtyStorage := make(map[zkt.Hash]*Node)
 	rootKey, err := mt.calcCommitment(mt.rootKey, hashedDirtyStorage, new(sync.Mutex))
 	if err != nil {
@@ -184,11 +189,9 @@ func (mt *ZkTrieImpl) pushLeaf(newLeaf *Node, oldLeaf *Node, lvl int,
 
 // Commit calculates the root for the entire trie and persist all the dirty nodes
 func (mt *ZkTrieImpl) Commit() error {
-	// check if there is any node in dirty storage that we haven't calculated the hash for
-	if mt.dirtyIndex.Cmp(big.NewInt(0)) != 0 {
-		if _, err := mt.Root(); err != nil {
-			return err
-		}
+	// force root hash calculation if needed
+	if _, err := mt.Root(); err != nil {
+		return err
 	}
 
 	for key, node := range mt.dirtyStorage {
