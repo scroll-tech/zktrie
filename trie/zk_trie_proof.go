@@ -45,6 +45,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 			)
 			return err
 		}
+		nodeHash := tn
 		lastN = n
 
 		finished := true
@@ -67,7 +68,7 @@ func (mt *ZkTrieImpl) prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 		}
 
 		nCopy := n.Copy()
-		nCopy.nodeHash = tn
+		nCopy.nodeHash = nodeHash
 		nodes = append(nodes, nCopy)
 		if finished {
 			break
