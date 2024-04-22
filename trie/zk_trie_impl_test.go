@@ -195,7 +195,7 @@ func TestMerkleTree_Deletion(t *testing.T) {
 
 		assertKeyDepth := func(key *zkt.Byte32, expectedDep int) {
 			levelCnt := 0
-			err := mt.prove(zkt.NewHashFromBytes(key[:]), 0,
+			err := mt.Prove(zkt.NewHashFromBytes(key[:]), 0,
 				func(*Node) error {
 					levelCnt++
 					return nil

@@ -169,7 +169,7 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 		return err
 	}
 	var prev *Node
-	return t.tree.prove(k, fromLevel, func(n *Node) (err error) {
+	return t.tree.Prove(k, fromLevel, func(n *Node) (err error) {
 		defer func() {
 			if err == nil {
 				err = writeNode(n)
