@@ -181,7 +181,6 @@ impl ZkTrie {
     // all errors are reduced to "not found"
     fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
         let ret = self.trie.try_get(key);
-        println!("get ret {}", ret.len());
         if ret.len() != T {
             None
         } else {
