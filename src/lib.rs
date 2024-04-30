@@ -47,7 +47,6 @@ extern "C" fn c_hash_scheme_adapter(
 }
 
 #[cfg(test)]
-#[cfg(feature = "dual_codehash")]
 mod tests {
 
     use super::*;
