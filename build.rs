@@ -3,6 +3,9 @@ use std::io::{self, Write};
 use std::path::Path;
 
 fn main() {
+    if cfg!(feature = "rs_zktrie") {
+        return;
+    }
     let lib_name = "zktrie";
     let src_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let src_dir = Path::new(src_dir.as_str());
