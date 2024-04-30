@@ -1,22 +1,29 @@
 mod constants;
-pub mod go_lib;
-pub mod rs_lib;
 
 pub use constants::*;
 pub type SimpleHashSchemeFn = fn(&[u8; 32], &[u8; 32], &[u8; 32]) -> Option<[u8; 32]>;
-
-#[cfg(not(feature = "rs_zktrie"))]
-pub use go_lib::*;
-#[cfg(feature = "rs_zktrie")]
-pub use rs_lib::*;
-
 use std::sync::OnceLock;
 static HASHSCHEME: OnceLock<SimpleHashSchemeFn> = OnceLock::new();
 
+
+#[cfg(not(feature = "rs_zktrie"))]
+pub mod go_lib;
+#[cfg(not(feature = "rs_zktrie"))]
+pub use go_lib::*;
+#[cfg(not(feature = "rs_zktrie"))]
 pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
     go_lib::init_hash_scheme(c_hash_scheme_adapter);
-    HASHSCHEME.set(f).unwrap_or_default()
 }
+
+#[cfg(feature = "rs_zktrie")]
+pub use rs_lib::*;
+#[cfg(feature = "rs_zktrie")]
+pub mod rs_lib;
+#[cfg(feature = "rs_zktrie")]
+pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
+   HASHSCHEME.set(f).unwrap_or_default()
+}
+
 
 extern "C" fn c_hash_scheme_adapter(
     a: *const u8,
