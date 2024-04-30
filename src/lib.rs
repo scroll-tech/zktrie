@@ -12,7 +12,7 @@ pub mod go_lib;
 pub use go_lib::*;
 #[cfg(not(feature = "rs_zktrie"))]
 pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
-    HASHSCHEME.set(f).unwrap_or_default()
+    HASHSCHEME.set(f).unwrap_or_default();
     go_lib::init_hash_scheme(c_hash_scheme_adapter);
 }
 
