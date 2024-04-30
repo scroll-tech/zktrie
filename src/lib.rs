@@ -12,6 +12,7 @@ pub mod go_lib;
 pub use go_lib::*;
 #[cfg(not(feature = "rs_zktrie"))]
 pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
+    HASHSCHEME.set(f).unwrap_or_default()
     go_lib::init_hash_scheme(c_hash_scheme_adapter);
 }
 
@@ -83,13 +84,16 @@ mod tests {
         Some(Fr::hash_with_domain([fa, fb], fdomain).to_repr())
     }
 
+    #[cfg(not(feature = "rs_zktrie"))]
     #[link(name = "zktrie")]
     extern "C" {
         fn TestHashScheme();
     }
 
+    #[cfg(not(feature = "rs_zktrie"))]
     #[test]
     fn hash_works() {
+        // check consistency between go poseidon and rust poseidon
         init_hash_scheme_simple(poseidon_hash_scheme);
         unsafe {
             TestHashScheme();
