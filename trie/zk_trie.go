@@ -208,7 +208,7 @@ func (t *ZkTrie) ProveWithDeletion(key []byte, fromLevel uint, writeNode func(*N
 					sibling = prev.ChildL
 				}
 
-				if siblingNode, err := t.tree.getNode(sibling); err == nil {
+				if siblingNode, err := t.tree.getNode(sibling, nil); err == nil {
 					onHit(n, siblingNode)
 				} else {
 					onHit(n, nil)
