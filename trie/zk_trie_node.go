@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
-	"slices"
 	"unsafe"
+
+	"golang.org/x/exp/slices"
 
 	zkt "github.com/scroll-tech/zktrie/types"
 )
