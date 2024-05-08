@@ -132,7 +132,8 @@ func NewBigIntFromHashBytes(b []byte) (*big.Int, error) {
 
 // NewHashFromBigInt returns a *Hash representation of the given *big.Int
 func NewHashFromBigInt(b *big.Int) *Hash {
-	return NewHashFromBytes(b.Bytes())
+	var bytes [HashByteLen]byte
+	return NewHashFromBytes(b.FillBytes(bytes[:]))
 }
 
 // NewHashFromBytes returns a *Hash from a byte array considered to be
