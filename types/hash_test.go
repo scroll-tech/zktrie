@@ -2,11 +2,13 @@ package zktrie
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDummyHash(t *testing.T) {
@@ -27,23 +29,23 @@ func TestCheckBigIntInField(t *testing.T) {
 }
 
 func TestNewHashAndBigIntFromBytes(t *testing.T) {
-	b := bytes.Repeat([]byte{1}, 32)
+	b := bytes.Repeat([]byte{1, 2}, 16)
 	h := NewHashFromBytes(b)
-	assert.Equal(t, "0101010101010101010101010101010101010101010101010101010101010101", h.Hex())
-	assert.Equal(t, "45408662...", h.String())
+	assert.Equal(t, "0102010201020102010201020102010201020102010201020102010201020102", h.Hex())
+	assert.Equal(t, "45585349...", h.String())
 
 	h, err := NewHashFromCheckedBytes(b)
 	assert.NoError(t, err)
-	assert.Equal(t, "0101010101010101010101010101010101010101010101010101010101010101", h.Hex())
+	assert.Equal(t, "0102010201020102010201020102010201020102010201020102010201020102", h.Hex())
 
 	bi, err := NewBigIntFromHashBytes(b)
 	assert.NoError(t, err)
-	assert.Equal(t, "454086624460063511464984254936031011189294057512315937409637584344757371137", bi.String())
+	assert.Equal(t, "455853498485199945361735166433836579326217380693297711485161465995904286978", bi.String())
 
 	h1 := NewHashFromBytes(b)
 	text, err := h1.MarshalText()
 	assert.NoError(t, err)
-	assert.Equal(t, "454086624460063511464984254936031011189294057512315937409637584344757371137", h1.BigInt().String())
+	assert.Equal(t, "455853498485199945361735166433836579326217380693297711485161465995904286978", h1.BigInt().String())
 	h2 := &Hash{}
 	err = h2.UnmarshalText(text)
 	assert.NoError(t, err)
@@ -76,4 +78,12 @@ func TestNewHashFromBigIntAndString(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "0101010101010101010101010101010101010101010101010101010101010101", h.Hex())
 	assert.Equal(t, "45408662...", h.String())
+}
+
+func TestNewHashFromBytes(t *testing.T) {
+	h := HashZero
+	read, err := rand.Read(h[:])
+	require.NoError(t, err)
+	require.Equal(t, HashByteLen, read)
+	require.Equal(t, h, *NewHashFromBytes(h.Bytes()))
 }
