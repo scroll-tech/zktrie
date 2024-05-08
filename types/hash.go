@@ -103,15 +103,15 @@ func (h *Hash) Bytes() []byte {
 	return b[:]
 }
 
-// Copy copies the given hash in to this
-func (h *Hash) Copy(other *Hash) {
+// Set copies the given hash in to this
+func (h *Hash) Set(other *Hash) {
 	*h = *other
 }
 
 // Copy copies the given hash in to this
 func (h *Hash) Clone() *Hash {
 	var clone Hash
-	clone.Copy(h)
+	clone.Set(h)
 	return &clone
 }
 

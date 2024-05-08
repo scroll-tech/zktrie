@@ -354,7 +354,7 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 
 	path := getPath(mt.maxLevels, nodeKey[:])
 	var nextKey zkt.Hash
-	nextKey.Copy(mt.rootKey)
+	nextKey.Set(mt.rootKey)
 	var nextNode Node
 	var siblings []*zkt.Hash
 	//sanity check
@@ -386,10 +386,10 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 			return n, siblings, ErrKeyNotFound
 		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			if path[i] {
-				nextKey.Copy(n.ChildR)
+				nextKey.Set(n.ChildR)
 				siblings = append(siblings, n.ChildL.Clone())
 			} else {
-				nextKey.Copy(n.ChildL)
+				nextKey.Set(n.ChildL)
 				siblings = append(siblings, n.ChildR.Clone())
 			}
 		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
