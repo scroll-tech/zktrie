@@ -4,9 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"slices"
 	"sync"
-
-	"golang.org/x/exp/slices"
 )
 
 var Q *big.Int
