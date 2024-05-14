@@ -42,7 +42,7 @@ func (mt *ZkTrieImpl) Prove(kHash *zkt.Hash, fromLevel uint, writeNode func(*Nod
 	var lastN *Node
 	tn := mt.rootKey
 	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.getNode(tn, nil)
+		n, err := mt.getNode(tn)
 		if err != nil {
 			fmt.Println("get node fail", err, tn.Hex(),
 				lastN.ChildL.Hex(),

@@ -101,7 +101,7 @@ func (mt *ZkTrieImpl) Root() (*zkt.Hash, error) {
 	mt.dirtyIndex = big.NewInt(0)
 	mt.dirtyStorage = hashedDirtyStorage
 	if mt.Debug {
-		_, err := mt.getNode(mt.rootKey, nil)
+		_, err := mt.getNode(mt.rootKey)
 		if err != nil {
 			panic(fmt.Errorf("load trie root failed hash %v", mt.rootKey.Bytes()))
 		}
@@ -220,7 +220,7 @@ func (mt *ZkTrieImpl) addLeaf(newLeaf *Node, currNodeKey *zkt.Hash,
 	if lvl > mt.maxLevels-1 {
 		return nil, false, ErrReachedMaxLevel
 	}
-	n, err := mt.getNode(currNodeKey, nil)
+	n, err := mt.getNode(currNodeKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -309,7 +309,7 @@ func (mt *ZkTrieImpl) calcCommitment(rootKey *zkt.Hash, hashedDirtyNodes map[zkt
 		return rootKey, nil
 	}
 
-	root, err := mt.getNode(rootKey, nil)
+	root, err := mt.getNode(rootKey)
 	if err != nil {
 		return nil, err
 	}
@@ -355,12 +355,12 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 	path := getPath(mt.maxLevels, nodeKey[:])
 	var nextKey zkt.Hash
 	nextKey.Set(mt.rootKey)
-	var nextNode Node
+	n := new(Node)
 	var siblings []*zkt.Hash
 	//sanity check
 	lastNodeType := NodeTypeBranch_3
 	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.getNode(&nextKey, &nextNode)
+		err := mt.getNodeTo(&nextKey, n)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -452,7 +452,7 @@ func (mt *ZkTrieImpl) TryDelete(nodeKey *zkt.Hash) error {
 }
 
 func (mt *ZkTrieImpl) tryDelete(rootKey *zkt.Hash, nodeKey *zkt.Hash, path []bool) (*zkt.Hash, bool, error) {
-	root, err := mt.getNode(rootKey, nil)
+	root, err := mt.getNode(rootKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -536,30 +536,32 @@ func (mt *ZkTrieImpl) GetNode(nodeHash *zkt.Hash) (*Node, error) {
 	mt.lock.RLock()
 	defer mt.lock.RUnlock()
 
-	return mt.getNode(nodeHash, nil)
+	return mt.getNode(nodeHash)
 }
 
-func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash, node *Node) (*Node, error) {
+func (mt *ZkTrieImpl) getNodeTo(nodeHash *zkt.Hash, node *Node) error {
 	if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
-		return NewEmptyNode(), nil
+		*node = *NewEmptyNode()
+		return nil
 	}
-	if node, found := mt.dirtyStorage[*nodeHash]; found {
-		return node, nil
+	if dirtyNode, found := mt.dirtyStorage[*nodeHash]; found {
+		*node = *dirtyNode.Copy()
+		return nil
 	}
 	nBytes, err := mt.db.Get(nodeHash[:])
-	if err == ErrKeyNotFound {
-		return nil, ErrKeyNotFound
-	} else if err != nil {
-		return nil, err
+	if err != nil {
+		return err
 	}
 
-	if node != nil {
-		if err = node.SetBytes(nBytes); err != nil {
-			return nil, err
-		}
-		return node, nil
+	return node.SetBytes(nBytes)
+}
+
+func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
+	var n Node
+	if err := mt.getNodeTo(nodeHash, &n); err != nil {
+		return nil, err
 	}
-	return NewNodeFromBytes(nBytes)
+	return &n, nil
 }
 
 // getPath returns the binary path, from the root to the leaf.
@@ -732,7 +734,7 @@ func (proof *Proof) rootFromProof(nodeHash, nodeKey *zkt.Hash) (*zkt.Hash, error
 
 // walk is a helper recursive function to iterate over all tree branches
 func (mt *ZkTrieImpl) walk(nodeHash *zkt.Hash, f func(*Node)) error {
-	n, err := mt.getNode(nodeHash, nil)
+	n, err := mt.getNode(nodeHash)
 	if err != nil {
 		return err
 	}
