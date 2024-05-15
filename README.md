@@ -8,6 +8,11 @@ Go and Rust implementations are provided inside this repo.
 
 See the technical [docs here](docs/zktrie.md).
 
+## Example codes
+
+[Rust example code](https://github.com/scroll-tech/stateless-block-verifier/blob/56b4aaf1d89a297a16a2934f579a116de024d213/src/executor.rs#L103)  
+[Go example code](https://github.com/scroll-tech/go-ethereum/blob/develop/trie/zk_trie.go)
+
 ## Rust Usage
 
 We must init the crate with a poseidon hash scheme before any actions.  [This](https://github.com/scroll-tech/zkevm-circuits/blob/e5c5522d544ce936290ef53e00c2d17a0e9b8d0b/zktrie/src/state/builder.rs#L17) is an example
