@@ -1,29 +1,17 @@
 # zktrie
 
-Wrap the zktrie go module in [l2geth](http://github.com/scroll-tech/go-ethereum) for rust
+zktrie is a binary poseidon trie used in Scroll Network.
 
+Go and Rust implementations are provided inside this repo.
 
-## Usage
+## Design Doc
 
-We must init the crate with a poseidon hash scheme before any actions:
+See the technical [docs here](docs/zktrie.md).
 
-```rust
+## Rust Usage
 
-extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8 {
-    /*
-        implement of poseidon hash which accept two 32-bytes buffer `a` and `b` as integer of finite field
-        
-        and write the output hashed integer to the mutable 32-bytes buffer `out`
+We must init the crate with a poseidon hash scheme before any actions.  [This](https://github.com/scroll-tech/zkevm-circuits/blob/e5c5522d544ce936290ef53e00c2d17a0e9b8d0b/zktrie/src/state/builder.rs#L17) is an example
 
-        for any error, return them via a message with `&'static str`, or return ptr::null for success
-
-        **all the integer is little endian represent**
-    */
-}
-
-zktrie_util::init_hash_scheme(hash_scheme);
-
-```
 
 All the zktrie can share one underlying database, which can be initialized by putting the encoded trie node data directly
 
@@ -59,21 +47,6 @@ trie.update_account(&acc_buf, &newacc).unwrap();
 ```
 
 The root and mpt path for an address can be query from trie by `ZkTrie::root` and `ZkTrie::prove`
-
-
-## Installation
-
-Add `Cargo.toml` under `[dependencies]`:
-
-```toml
-[dependencies]
-zktrie = { git = "https://https://github.com/scroll-tech/zktrie.git" }
-```
-
-
-## Documentation
-
-See the technical [docs here](docs/zktrie.md).
 
 
 ## License
