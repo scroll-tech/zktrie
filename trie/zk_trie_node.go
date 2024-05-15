@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"slices"
 	"unsafe"
 
 	zkt "github.com/scroll-tech/zktrie/types"
@@ -129,49 +130,9 @@ func NewEmptyNode() *Node {
 
 // NewNodeFromBytes creates a new node by parsing the input []byte.
 func NewNodeFromBytes(b []byte) (*Node, error) {
-	if len(b) < 1 {
-		return nil, ErrNodeBytesBadSize
-	}
-	n := Node{Type: NodeType(b[0])}
-	b = b[1:]
-	switch n.Type {
-	case NodeTypeParent, NodeTypeBranch_0,
-		NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
-		if len(b) != 2*zkt.HashByteLen {
-			return nil, ErrNodeBytesBadSize
-		}
-		n.ChildL = zkt.NewHashFromBytes(b[:zkt.HashByteLen])
-		n.ChildR = zkt.NewHashFromBytes(b[zkt.HashByteLen : zkt.HashByteLen*2])
-	case NodeTypeLeaf, NodeTypeLeaf_New:
-		if len(b) < zkt.HashByteLen+4 {
-			return nil, ErrNodeBytesBadSize
-		}
-		n.NodeKey = zkt.NewHashFromBytes(b[0:zkt.HashByteLen])
-		mark := binary.LittleEndian.Uint32(b[zkt.HashByteLen : zkt.HashByteLen+4])
-		preimageLen := int(mark & 255)
-		n.CompressedFlags = mark >> 8
-		n.ValuePreimage = make([]zkt.Byte32, preimageLen)
-		curPos := zkt.HashByteLen + 4
-		if len(b) < curPos+preimageLen*32+1 {
-			return nil, ErrNodeBytesBadSize
-		}
-		for i := 0; i < preimageLen; i++ {
-			copy(n.ValuePreimage[i][:], b[i*32+curPos:(i+1)*32+curPos])
-		}
-		curPos += preimageLen * 32
-		preImageSize := int(b[curPos])
-		curPos += 1
-		if preImageSize != 0 {
-			if len(b) < curPos+preImageSize {
-				return nil, ErrNodeBytesBadSize
-			}
-			n.KeyPreimage = new(zkt.Byte32)
-			copy(n.KeyPreimage[:], b[curPos:curPos+preImageSize])
-		}
-	case NodeTypeEmpty, NodeTypeEmpty_New:
-		break
-	default:
-		return nil, ErrInvalidNodeFound
+	var n Node
+	if err := n.SetBytes(b); err != nil {
+		return nil, err
 	}
 	return &n, nil
 }
@@ -180,6 +141,89 @@ func NewNodeFromBytes(b []byte) (*Node, error) {
 // entry of the leaf.
 func LeafHash(k, v *zkt.Hash) (*zkt.Hash, error) {
 	return zkt.HashElemsWithDomain(big.NewInt(int64(NodeTypeLeaf_New)), k.BigInt(), v.BigInt())
+}
+
+func (n *Node) SetBytes(b []byte) error {
+	if len(b) < 1 {
+		return ErrNodeBytesBadSize
+	}
+	nType := NodeType(b[0])
+	b = b[1:]
+	switch nType {
+	case NodeTypeParent, NodeTypeBranch_0,
+		NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
+		if len(b) != 2*zkt.HashByteLen {
+			return ErrNodeBytesBadSize
+		}
+
+		childL := n.ChildL
+		childR := n.ChildR
+
+		if childL == nil {
+			childL = zkt.NewHashFromBytes(b[:zkt.HashByteLen])
+		} else {
+			childL.SetBytes(b[:zkt.HashByteLen])
+		}
+
+		if childR == nil {
+			childR = zkt.NewHashFromBytes(b[zkt.HashByteLen : zkt.HashByteLen*2])
+		} else {
+			childR.SetBytes(b[zkt.HashByteLen : zkt.HashByteLen*2])
+		}
+
+		*n = Node{
+			Type:   nType,
+			ChildL: childL,
+			ChildR: childR,
+		}
+	case NodeTypeLeaf, NodeTypeLeaf_New:
+		if len(b) < zkt.HashByteLen+4 {
+			return ErrNodeBytesBadSize
+		}
+		nodeKey := zkt.NewHashFromBytes(b[0:zkt.HashByteLen])
+		mark := binary.LittleEndian.Uint32(b[zkt.HashByteLen : zkt.HashByteLen+4])
+		preimageLen := int(mark & 255)
+		compressedFlags := mark >> 8
+		valuePreimage := slices.Grow(n.ValuePreimage[0:], preimageLen)
+		curPos := zkt.HashByteLen + 4
+		if len(b) < curPos+preimageLen*32+1 {
+			return ErrNodeBytesBadSize
+		}
+		for i := 0; i < preimageLen; i++ {
+			var byte32 zkt.Byte32
+			copy(byte32[:], b[i*32+curPos:(i+1)*32+curPos])
+			valuePreimage = append(valuePreimage, byte32)
+		}
+		curPos += preimageLen * 32
+		preImageSize := int(b[curPos])
+		curPos += 1
+
+		var keyPreimage *zkt.Byte32
+		if preImageSize != 0 {
+			if len(b) < curPos+preImageSize {
+				return ErrNodeBytesBadSize
+			}
+
+			keyPreimage = n.KeyPreimage
+			if keyPreimage == nil {
+				keyPreimage = new(zkt.Byte32)
+			}
+			copy(keyPreimage[:], b[curPos:curPos+preImageSize])
+		}
+
+		*n = Node{
+			Type:            nType,
+			NodeKey:         nodeKey,
+			CompressedFlags: compressedFlags,
+			ValuePreimage:   valuePreimage,
+			KeyPreimage:     keyPreimage,
+		}
+	case NodeTypeEmpty, NodeTypeEmpty_New:
+		*n = Node{Type: nType}
+	default:
+		return ErrInvalidNodeFound
+	}
+	return nil
 }
 
 // IsTerminal returns if the node is 'terminated', i.e. empty or leaf node

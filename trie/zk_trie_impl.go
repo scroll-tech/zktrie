@@ -353,12 +353,14 @@ func (mt *ZkTrieImpl) calcCommitment(rootKey *zkt.Hash, hashedDirtyNodes map[zkt
 func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 
 	path := getPath(mt.maxLevels, nodeKey[:])
-	nextKey := mt.rootKey
+	var nextKey zkt.Hash
+	nextKey.Set(mt.rootKey)
+	n := new(Node)
 	var siblings []*zkt.Hash
 	//sanity check
 	lastNodeType := NodeTypeBranch_3
 	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.getNode(nextKey)
+		err := mt.getNodeTo(&nextKey, n)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -384,11 +386,11 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 			return n, siblings, ErrKeyNotFound
 		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			if path[i] {
-				nextKey = n.ChildR
-				siblings = append(siblings, n.ChildL)
+				nextKey.Set(n.ChildR)
+				siblings = append(siblings, n.ChildL.Clone())
 			} else {
-				nextKey = n.ChildL
-				siblings = append(siblings, n.ChildR)
+				nextKey.Set(n.ChildL)
+				siblings = append(siblings, n.ChildR.Clone())
 			}
 		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
 			panic("encounter deprecated node types")
@@ -537,20 +539,29 @@ func (mt *ZkTrieImpl) GetNode(nodeHash *zkt.Hash) (*Node, error) {
 	return mt.getNode(nodeHash)
 }
 
-func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
+func (mt *ZkTrieImpl) getNodeTo(nodeHash *zkt.Hash, node *Node) error {
 	if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
-		return NewEmptyNode(), nil
+		*node = *NewEmptyNode()
+		return nil
 	}
-	if node, found := mt.dirtyStorage[*nodeHash]; found {
-		return node, nil
+	if dirtyNode, found := mt.dirtyStorage[*nodeHash]; found {
+		*node = *dirtyNode.Copy()
+		return nil
 	}
 	nBytes, err := mt.db.Get(nodeHash[:])
-	if err == ErrKeyNotFound {
-		return nil, ErrKeyNotFound
-	} else if err != nil {
+	if err != nil {
+		return err
+	}
+
+	return node.SetBytes(nBytes)
+}
+
+func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
+	var n Node
+	if err := mt.getNodeTo(nodeHash, &n); err != nil {
 		return nil, err
 	}
-	return NewNodeFromBytes(nBytes)
+	return &n, nil
 }
 
 // getPath returns the binary path, from the root to the leaf.
