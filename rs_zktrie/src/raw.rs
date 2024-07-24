@@ -132,7 +132,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             let path = Self::get_path(node_key);
 
             let old_hash = self.root_hash.clone();
-            let ret = self.add_leaf(new_leaf_node.try_into()?, &old_hash, 0, path, true);
+            let ret = self.add_leaf(new_leaf_node.try_into()?, &old_hash, 0, &path, true);
             match ret {
                 Err(e) => Err(e),
                 Ok((new_root_hash, _)) => {
@@ -193,7 +193,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         new_leaf: CalculatedNode<H>,
         curr_node_hash: &H,
         lvl: u32,
-        path: Vec<bool>,
+        path: &[bool],
         force_update: bool,
     ) -> Result<(H, bool), ImplError> {
         if lvl > (MAX_LEVELS - 1) as u32 {
@@ -235,7 +235,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                         // We need to push new_leaf down until its path diverges from
                         // n's path
                         let hash =
-                            self.push_leaf(new_leaf, n.try_into()?, lvl, &path, &path_old_leaf)?;
+                            self.push_leaf(new_leaf, n.try_into()?, lvl, path, &path_old_leaf)?;
                         Ok((hash, false))
                     }
                 }
@@ -494,7 +494,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                         if *node_key == n.node_key {
                             // remove and go up with the sibling
                             self.rm_and_upload(
-                                path.clone(),
+                                path.iter().copied(),
                                 path_types.clone(),
                                 node_key,
                                 siblings.clone(),
@@ -564,7 +564,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
     // nodes with the new values.
     fn rm_and_upload(
         &mut self,
-        path: Vec<bool>,
+        path: impl ExactSizeIterator<Item = bool> + DoubleEndedIterator + Clone,
         path_types: Vec<NodeType>,
         _node_key: &H,
         siblings: Vec<H>,
@@ -599,8 +599,8 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         } else {
             let mut pt_remain = path_types.clone();
             pt_remain.pop();
-            let pathv = path[0..path_types.len()].to_vec();
-            let mut path_remain = path[0..pt_remain.len()].to_vec();
+            let pathv = path.clone().take(path_types.len());
+            let mut path_remain = path.clone().take(pt_remain.len());
             let mut remain = siblings.clone();
             let to_upload = remain.pop().unwrap();
             for ((sib, p), ptype) in siblings
@@ -612,7 +612,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             {
                 remain.pop();
                 pt_remain.pop();
-                path_remain.pop();
+                path_remain.next_back();
                 if final_root.is_none() && (sib != H::hash_zero()) {
                     let new_node_type = ptype.deduce_downgrade_type(p); // atRight = path[i]
                     let new_node: CalculatedNode<H> = if p {
@@ -634,7 +634,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                     )?;
                     // go up until the root
                     final_root = Some(self.recalculate_path_until_root(
-                        &path_remain,
+                        path_remain.clone(),
                         &pt_remain,
                         new_node_hash,
                         &remain,
@@ -663,13 +663,13 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
     // recalculatePathUntilRoot recalculates the nodes until the Root
     fn recalculate_path_until_root(
         &mut self,
-        path: &[bool],
+        path: impl ExactSizeIterator<Item = bool> + DoubleEndedIterator,
         path_types: &[NodeType],
         mut node_hash: H,
         siblings: &[H],
     ) -> Result<H, ImplError> {
         for ((sib, p), pt) in siblings.iter().zip(path).zip(path_types).rev() {
-            let n: CalculatedNode<H> = if *p {
+            let n: CalculatedNode<H> = if p {
                 Node::<H>::new_parent_node(*pt, sib.clone(), node_hash)
             } else {
                 Node::<H>::new_parent_node(*pt, node_hash, sib.clone())
