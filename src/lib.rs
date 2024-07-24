@@ -26,6 +26,7 @@ pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
 }
 
 
+#[allow(unused)]
 extern "C" fn c_hash_scheme_adapter(
     a: *const u8,
     b: *const u8,

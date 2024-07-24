@@ -43,11 +43,10 @@ impl Error for ImplError {}
 
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
 #[derive(Clone)]
-pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase> {
+pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> {
     db: DB,
     root_hash: H,
     writable: bool,
-    max_levels: u32,
     debug: bool,
 }
 
@@ -73,9 +72,9 @@ impl<H: Hashable> CalculatedNode<H> {
     }
 }
 
-impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
-    pub fn new_zktrie_impl(storage: DB, max_levels: u32) -> Result<Self, ImplError> {
-        Self::new_zktrie_impl_with_root(storage, H::hash_zero(), max_levels)
+impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB, MAX_LEVELS> {
+    pub fn new_zktrie_impl(storage: DB) -> Result<Self, ImplError> {
+        Self::new_zktrie_impl_with_root(storage, H::hash_zero())
     }
 
     /// new_zktrie_implWithRoot loads a new ZkTrieImpl. If in the storage already exists one
@@ -83,12 +82,10 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     pub fn new_zktrie_impl_with_root(
         storage: DB,
         root: H,
-        max_levels: u32,
     ) -> Result<Self, ImplError> {
         let not_zero_root = root != H::hash_zero();
         let mt = ZkTrieImpl {
             db: storage,
-            max_levels,
             writable: true,
             root_hash: root,
             debug: false,
@@ -111,8 +108,9 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         self.root_hash.clone()
     }
 
-    pub fn max_levels(&self) -> u32 {
-        self.max_levels
+    #[inline]
+    pub const fn max_levels(&self) -> u32 {
+        MAX_LEVELS as u32
     }
 
     /// TryUpdate updates a node_key & value : u32o the ZkTrieImpl. Where the `k` determines the
@@ -131,7 +129,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             Err(ImplError::ErrInvalidField)
         } else {
             let new_leaf_node = Node::<H>::new_leaf_node(node_key.clone(), v_flag, v_preimage);
-            let path = Self::get_path(self.max_levels, node_key);
+            let path = Self::get_path(node_key);
 
             let old_hash = self.root_hash.clone();
             let ret = self.add_leaf(new_leaf_node.try_into()?, &old_hash, 0, path, true);
@@ -161,7 +159,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         path_new_leaf: &[bool],
         path_old_leaf: &[bool],
     ) -> Result<H, ImplError> {
-        if lvl > self.max_levels - 2 {
+        if lvl > (MAX_LEVELS - 2) as u32 {
             Err(ImplError::ErrReachedMaxLevel)
         } else if path_new_leaf[lvl as usize] == path_old_leaf[lvl as usize] {
             // We need to go deeper!
@@ -198,7 +196,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         path: Vec<bool>,
         force_update: bool,
     ) -> Result<(H, bool), ImplError> {
-        if lvl > self.max_levels - 1 {
+        if lvl > (MAX_LEVELS - 1) as u32 {
             Err(ImplError::ErrReachedMaxLevel)
         } else {
             let n = self.get_node(curr_node_hash)?;
@@ -233,7 +231,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                             Err(ImplError::ErrEntryIndexAlreadyExists)
                         }
                     } else {
-                        let path_old_leaf = Self::get_path(self.max_levels, &n.node_key);
+                        let path_old_leaf = Self::get_path(&n.node_key);
                         // We need to push new_leaf down until its path diverges from
                         // n's path
                         let hash =
@@ -355,21 +353,21 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     }
 
     fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
-        let path = Self::get_path(self.max_levels, node_key);
+        let path = Self::get_path(node_key);
         let mut next_hash = self.root_hash.clone();
         let mut siblings = vec![];
         let mut node = None;
 
         let mut last_node_type = NodeTypeBranch3;
-        for i in 0..self.max_levels {
+        for i in 0..MAX_LEVELS {
             let n = self.get_node(&next_hash)?;
             //sanity check
             if i > 0 && n.is_terminal() {
                 if last_node_type == NodeTypeBranch3 {
                     panic!("parent node has invalid type: children are not terminal")
-                } else if path[i as usize - 1] && last_node_type == NodeTypeBranch1 {
+                } else if path[i - 1] && last_node_type == NodeTypeBranch1 {
                     panic!("parent node has invalid type: right child is not terminal")
-                } else if !path[i as usize - 1] && last_node_type == NodeTypeBranch2 {
+                } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
                     panic!("parent node has invalid type: left child is not terminal")
                 }
             }
@@ -389,7 +387,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                     }
                 }
                 NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
-                    if path[i as usize] {
+                    if path[i] {
                         next_hash = n.child_right.unwrap();
                         siblings.push(n.child_left.unwrap());
                     } else {
@@ -436,13 +434,13 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
             // verify that k is valid and fit inside the Finite Field.
             Err(ImplError::ErrInvalidField)
         } else {
-            let path = Self::get_path(self.max_levels, node_key);
+            let path = Self::get_path(node_key);
             let mut next_hash = self.root_hash.clone();
-            let mut siblings = vec![];
-            let mut path_types = vec![];
+            let mut siblings = Vec::with_capacity(MAX_LEVELS);
+            let mut path_types = Vec::with_capacity(MAX_LEVELS);
             let mut found = false;
             let mut err = ImplError::ErrKeyNotFound;
-            for i in 0..self.max_levels {
+            for i in 0..MAX_LEVELS {
                 let n = self.get_node(&next_hash)?;
                 match n.node_type {
                     NodeTypeLeafNew => {
@@ -460,7 +458,7 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
                     }
                     NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
                         path_types.push(n.node_type);
-                        if path[i as usize] {
+                        if path[i] {
                             next_hash = n.child_right.unwrap();
                             siblings.push(n.child_left.unwrap());
                         } else {
@@ -485,15 +483,15 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     // prove constructs a merkle proof for SMT, it respect the protocol used by the ethereum-trie
     // but save the node data with a compact form
     pub fn prove(&self, node_key: &H) -> Result<Vec<Node<H>>, ImplError> {
-        let path = Self::get_path(self.max_levels, node_key);
+        let path = Self::get_path(node_key);
         let mut next_hash = self.root_hash.clone();
-        let mut nodes = vec![];
-        for i in 0..self.max_levels {
+        let mut nodes = Vec::with_capacity(MAX_LEVELS);
+        for p in path.iter() {
             let n = self.get_node(&next_hash)?;
             let finished = match n.node_type {
                 NodeTypeEmptyNew | NodeTypeLeafNew => true,
                 NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
-                    if path[i as usize] {
+                    if *p {
                         next_hash = n.child_right.clone().expect("node should has this child");
                     } else {
                         next_hash = n.child_left.clone().expect("node should has this child");
@@ -665,10 +663,10 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     }
 
     // get_path returns the binary path, from the root to the leaf.
-    fn get_path(num_levels: u32, key: &H) -> Vec<bool> {
-        let mut path = vec![];
-        for n in 0..num_levels {
-            path.push(H::test_bit(key, n as usize))
+    fn get_path(key: &H) -> Vec<bool> {
+        let mut path = Vec::with_capacity(MAX_LEVELS);
+        for n in 0..MAX_LEVELS {
+            path.push(H::test_bit(key, n))
         }
         path
     }
@@ -684,18 +682,17 @@ mod test {
 
     #[test]
     fn test_merkletree_init() {
-        let max_levels = 254u32;
+        const MAX_LEVELS: usize = 254;
 
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl(db);
         assert!(mt.is_ok());
         assert_eq!(Hash::hash_zero(), mt.unwrap().root());
 
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl_with_root(
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl_with_root(
             db,
             Hash::hash_zero(),
-            max_levels,
         );
         assert!(mt.is_ok());
 
@@ -711,9 +708,9 @@ mod test {
 
     #[test]
     fn test_merkletree_update_get() {
-        let max_levels = 128u32;
+        const MAX_LEVELS: usize = 128;
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl(db);
         let mut t = mt.unwrap();
 
         //update and get value check
@@ -729,7 +726,7 @@ mod test {
         let h1 = t.root();
 
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl(db);
         let mut t = mt.unwrap();
         //update and get value check by reverse order
         for i in 1..20 {
@@ -752,9 +749,9 @@ mod test {
 
     #[test]
     fn test_merkletree_delete() {
-        let max_levels = 128u32;
+        const MAX_LEVELS: usize = 128;
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl(db);
         let mut t = mt.unwrap();
 
         //update by order, delete reverse order, check root hash change
@@ -774,9 +771,8 @@ mod test {
         }
 
         //update same leaf and delete by order
-        let max_levels = 128u32;
         let db = SimpleDb::new();
-        let mt = ZkTrieImpl::<Hash, SimpleDb>::new_zktrie_impl(db, max_levels);
+        let mt = ZkTrieImpl::<Hash, SimpleDb, MAX_LEVELS>::new_zktrie_impl(db);
         let mut t = mt.unwrap();
         for i in 1..10 {
             let h = Hash::from_bytes(&[i as u8; 1]).unwrap();
