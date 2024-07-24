@@ -352,36 +352,39 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         }
     }
 
-    fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
+    #[inline]
+    fn try_get_node_with_path(&self, node_key: &H) -> Result<Node<H>, ImplError> {
         let path = Self::get_path(node_key);
         let mut next_hash = self.root_hash.clone();
-        let mut siblings = vec![];
-        let mut node = None;
 
+        #[cfg(debug_assertions)]
         let mut last_node_type = NodeTypeBranch3;
+
         for i in 0..MAX_LEVELS {
             let n = self.get_node(&next_hash)?;
-            //sanity check
-            if i > 0 && n.is_terminal() {
-                if last_node_type == NodeTypeBranch3 {
-                    panic!("parent node has invalid type: children are not terminal")
-                } else if path[i - 1] && last_node_type == NodeTypeBranch1 {
-                    panic!("parent node has invalid type: right child is not terminal")
-                } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
-                    panic!("parent node has invalid type: left child is not terminal")
+
+            #[cfg(debug_assertions)]
+            {
+                // sanity check
+                if i > 0 && n.is_terminal() {
+                    if last_node_type == NodeTypeBranch3 {
+                        panic!("parent node has invalid type: children are not terminal")
+                    } else if path[i- 1] && last_node_type == NodeTypeBranch1 {
+                        panic!("parent node has invalid type: right child is not terminal")
+                    } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
+                        panic!("parent node has invalid type: left child is not terminal")
+                    }
                 }
+                last_node_type = n.node_type;
             }
 
-            last_node_type = n.node_type;
             match n.node_type {
                 NodeTypeEmptyNew => {
-                    node = Some(Node::<H>::new_empty_node());
-                    Ok(())
+                    return Ok(Node::<H>::new_empty_node());
                 }
                 NodeTypeLeafNew => {
-                    if *node_key == n.node_key {
-                        node = Some(n);
-                        Ok(())
+                    return if *node_key == n.node_key {
+                        Ok(n)
                     } else {
                         Err(ImplError::ErrKeyNotFound)
                     }
@@ -389,31 +392,75 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                 NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
                     if path[i] {
                         next_hash = n.child_right.unwrap();
-                        siblings.push(n.child_left.unwrap());
                     } else {
                         next_hash = n.child_left.unwrap();
-                        siblings.push(n.child_right.unwrap());
-                    };
-                    Ok(())
+                    }
                 }
-                NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent => {
-                    panic!("encounter deprecated node types")
-                }
-                _ => Err(ImplError::ErrInvalidNodeFound),
-            }?
+                _ => return Err(ImplError::ErrInvalidNodeFound),
+            }
         }
-        Ok((node.unwrap(), siblings))
+        Err(ImplError::ErrKeyNotFound)
     }
+
+    // fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
+    //     let path = Self::get_path(node_key);
+    //     let mut next_hash = self.root_hash.clone();
+    //     let mut siblings = vec![];
+    //     let mut node = None;
+    //
+    //     let mut last_node_type = NodeTypeBranch3;
+    //     for i in 0..MAX_LEVELS {
+    //         let n = self.get_node(&next_hash)?;
+    //         //sanity check
+    //         if i > 0 && n.is_terminal() {
+    //             if last_node_type == NodeTypeBranch3 {
+    //                 panic!("parent node has invalid type: children are not terminal")
+    //             } else if path[i - 1] && last_node_type == NodeTypeBranch1 {
+    //                 panic!("parent node has invalid type: right child is not terminal")
+    //             } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
+    //                 panic!("parent node has invalid type: left child is not terminal")
+    //             }
+    //         }
+    //
+    //         last_node_type = n.node_type;
+    //         match n.node_type {
+    //             NodeTypeEmptyNew => {
+    //                 node = Some(Node::<H>::new_empty_node());
+    //                 Ok(())
+    //             }
+    //             NodeTypeLeafNew => {
+    //                 if *node_key == n.node_key {
+    //                     node = Some(n);
+    //                     Ok(())
+    //                 } else {
+    //                     Err(ImplError::ErrKeyNotFound)
+    //                 }
+    //             }
+    //             NodeTypeBranch0 | NodeTypeBranch1 | NodeTypeBranch2 | NodeTypeBranch3 => {
+    //                 if path[i] {
+    //                     next_hash = n.child_right.unwrap();
+    //                     siblings.push(n.child_left.unwrap());
+    //                 } else {
+    //                     next_hash = n.child_left.unwrap();
+    //                     siblings.push(n.child_right.unwrap());
+    //                 };
+    //                 Ok(())
+    //             }
+    //             NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent => {
+    //                 panic!("encounter deprecated node types")
+    //             }
+    //             _ => Err(ImplError::ErrInvalidNodeFound),
+    //         }?
+    //     }
+    //     Ok((node.unwrap(), siblings))
+    // }
 
     /// TryGet returns the value for key stored in the trie.
     /// The value bytes must not be modified by the caller.
     /// If a node was not found in the database, a MissingNodeError is returned.
+    #[inline]
     pub fn try_get(&self, node_key: &H) -> Result<Node<H>, ImplError> {
-        let ret = self.try_get_with_path(node_key);
-        match ret {
-            Err(e) => Err(e),
-            Ok((node, _)) => Ok(node),
-        }
+        self.try_get_node_with_path(node_key)
     }
 
     /// Delete removes the specified Key from the ZkTrieImpl and updates the path
