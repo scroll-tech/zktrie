@@ -1,13 +1,15 @@
 use crate::raw::ImplError;
 use std::collections::HashMap;
+use std::rc::Rc;
+
 pub trait ZktrieDatabase: Clone {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), ImplError>;
-    fn get(&self, k: &[u8]) -> Result<Vec<u8>, ImplError>;
+    fn get(&self, k: &[u8]) -> Result<Rc<[u8]>, ImplError>;
 }
 
 #[derive(Clone, Default)]
 pub struct SimpleDb {
-    db: HashMap<Vec<u8>, Vec<u8>>,
+    db: HashMap<Box<[u8]>, Rc<[u8]>>,
 }
 
 impl SimpleDb {
@@ -18,11 +20,11 @@ impl SimpleDb {
 
 impl ZktrieDatabase for SimpleDb {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), ImplError> {
-        self.db.insert(k, v);
+        self.db.insert(k.into_boxed_slice(), Rc::from(v.into_boxed_slice()));
         Ok(())
     }
 
-    fn get(&self, k: &[u8]) -> Result<Vec<u8>, ImplError> {
+    fn get(&self, k: &[u8]) -> Result<Rc<[u8]>, ImplError> {
         self.db.get(k).cloned().ok_or(ImplError::ErrKeyNotFound)
     }
 }
@@ -41,8 +43,8 @@ mod test {
         d.put(k1.clone(), v1.clone()).unwrap();
         d.put(k2.clone(), v2.clone()).unwrap();
         let v0 = d.get(&k1).unwrap();
-        assert_eq!(v0, v1);
+        assert_eq!(v0.as_ref(), v1.as_slice());
         let v0 = d.get(&k2).unwrap();
-        assert_eq!(v0, v2);
+        assert_eq!(v0.as_ref(), v2.as_slice());
     }
 }

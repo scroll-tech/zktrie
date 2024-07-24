@@ -122,7 +122,7 @@ impl db::ZktrieDatabase for SharedMemoryDb {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), raw::ImplError> {
         self.0.db.borrow_mut().put(k, v)
     }
-    fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
+    fn get(&self, k: &[u8]) -> Result<Rc<[u8]>, raw::ImplError> {
         self.0.db.borrow().get(k)
     }
 }

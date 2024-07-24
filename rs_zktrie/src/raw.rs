@@ -306,7 +306,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             let old = self.db.get(&hash.to_bytes());
             match old {
                 Ok(old_v) => {
-                    if v != old_v {
+                    if v.as_slice() != old_v.as_ref() {
                         Err(ImplError::ErrNodeKeyAlreadyExists)
                     } else {
                         // duplicated
@@ -587,7 +587,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             // for a node which is not "both terminated", simply recalc the path
             // notice the nodetype would not change
             final_root = Some(self.recalculate_path_until_root(
-                &path,
+                path,
                 &path_types,
                 H::hash_zero(), //we send the hash of empty node here,
                 &siblings,
