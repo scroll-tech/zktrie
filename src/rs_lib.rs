@@ -5,7 +5,7 @@ use zktrie_rust::{
     types::{Hashable, TrieHashScheme},
     *,
 };
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct HashField([u8; HASHLEN]);
 
 impl AsRef<[u8]> for HashField {

@@ -13,7 +13,7 @@ pub trait Hash: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Debug + PartialEq 
     fn simple_hash_scheme(a: [u8; 32], b: [u8; 32], domain: u64) -> Self;
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct AsHash<T>(T);
 
 impl<T> AsHash<T> {
@@ -34,21 +34,34 @@ impl<T: Hash> AsMut<[u8]> for AsHash<T> {
     }
 }
 
-impl<T: Hash> Hashable for AsHash<T> {
+impl<T: Copy + Eq + Hash + std::hash::Hash> Hashable for AsHash<T> {
+    fn hash_elems_with_domain(
+        domain: u64,
+        lbytes: &Self,
+        rbytes: &Self,
+    ) -> Result<Self, ImplError> {
+        let h = Self(T::simple_hash_scheme(
+            lbytes.as_ref().try_into().expect("same length"),
+            rbytes.as_ref().try_into().expect("same length"),
+            domain,
+        ));
+        if Self::check_in_field(&h) {
+            Ok(h)
+        } else {
+            Err(ImplError::ErrNodeBytesBadSize)
+        }
+    }
+
+    fn hash_zero() -> Self {
+        Self(T::zero())
+    }
+
     fn check_in_field(hash: &Self) -> bool {
         hash.0.is_valid()
     }
 
     fn test_bit(key: &Self, pos: usize) -> bool {
         return key.as_ref()[T::LEN - pos / 8 - 1] & (1 << (pos % 8)) != 0;
-    }
-
-    fn to_bytes(&self) -> Vec<u8> {
-        self.as_ref()[0..T::LEN].to_vec()
-    }
-
-    fn hash_zero() -> Self {
-        Self(T::zero())
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, ImplError> {
@@ -66,21 +79,8 @@ impl<T: Hash> Hashable for AsHash<T> {
         }
     }
 
-    fn hash_elems_with_domain(
-        domain: u64,
-        lbytes: &Self,
-        rbytes: &Self,
-    ) -> Result<Self, ImplError> {
-        let h = Self(T::simple_hash_scheme(
-            lbytes.as_ref().try_into().expect("same length"),
-            rbytes.as_ref().try_into().expect("same length"),
-            domain,
-        ));
-        if Self::check_in_field(&h) {
-            Ok(h)
-        } else {
-            Err(ImplError::ErrNodeBytesBadSize)
-        }
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref()[0..T::LEN].to_vec()
     }
 }
 
@@ -101,7 +101,7 @@ mod tests {
 
     const HASH_BYTE_LEN: usize = 32;
 
-    #[derive(Clone, Debug, Default, PartialEq)]
+    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
     pub struct Hash(pub(crate) [u8; HASH_BYTE_LEN]);
 
     impl AsRef<[u8]> for Hash {

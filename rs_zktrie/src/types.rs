@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 const HASH_BYTE_LEN: usize = 32;
 
-pub trait Hashable: Clone + Debug + Default + PartialEq {
+pub trait Hashable: Copy + Clone + Debug + Default + PartialEq + Eq + std::hash::Hash {
     fn hash_elems_with_domain(domain: u64, lbytes: &Self, rbytes: &Self)
         -> Result<Self, ImplError>;
     fn hash_zero() -> Self;
@@ -151,7 +151,7 @@ impl<H: Hashable> TrieHashScheme for Node<H> {
                 out.push(if pair.len() == 2 {
                     H::hash_elems_with_domain(domain as u64, &pair[0], &pair[1])?
                 } else {
-                    pair[0].clone()
+                    pair[0]
                 });
             }
             tmp = out;
@@ -344,7 +344,7 @@ impl<H: Hashable> Node<H> {
 
     /// Return the nodehash, in case it is not calculated, we get None
     pub fn node_hash(&self) -> Option<H> {
-        self.node_hash.clone()
+        self.node_hash
     }
 
     /// ValueHash computes the hash digest of the value stored in the leaf node. For
@@ -353,7 +353,7 @@ impl<H: Hashable> Node<H> {
     pub fn value_hash(&self) -> Option<H> {
         if self.node_hash.is_some() {
             match self.node_type {
-                NodeTypeLeafNew => self.value_hash.clone(),
+                NodeTypeLeafNew => self.value_hash,
                 _ => Some(H::hash_zero()),
             }
         } else {

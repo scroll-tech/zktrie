@@ -50,6 +50,7 @@ pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> 
     debug: bool,
 }
 
+#[derive(Clone)]
 struct CalculatedNode<H: Hashable>(Node<H>);
 
 impl<H: Hashable> TryFrom<Node<H>> for CalculatedNode<H> {
@@ -79,10 +80,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
 
     /// new_zktrie_implWithRoot loads a new ZkTrieImpl. If in the storage already exists one
     /// will open that one, if not, will create a new one.
-    pub fn new_zktrie_impl_with_root(
-        storage: DB,
-        root: H,
-    ) -> Result<Self, ImplError> {
+    pub fn new_zktrie_impl_with_root(storage: DB, root: H) -> Result<Self, ImplError> {
         let not_zero_root = root != H::hash_zero();
         let mt = ZkTrieImpl {
             db: storage,
@@ -131,7 +129,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             let new_leaf_node = Node::<H>::new_leaf_node(node_key.clone(), v_flag, v_preimage);
             let path = Self::get_path(node_key);
 
-            let old_hash = self.root_hash.clone();
+            let old_hash = self.root_hash;
             let ret = self.add_leaf(new_leaf_node.try_into()?, &old_hash, 0, &path, true);
             match ret {
                 Err(e) => Err(e),
@@ -369,7 +367,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                 if i > 0 && n.is_terminal() {
                     if last_node_type == NodeTypeBranch3 {
                         panic!("parent node has invalid type: children are not terminal")
-                    } else if path[i- 1] && last_node_type == NodeTypeBranch1 {
+                    } else if path[i - 1] && last_node_type == NodeTypeBranch1 {
                         panic!("parent node has invalid type: right child is not terminal")
                     } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
                         panic!("parent node has invalid type: left child is not terminal")
@@ -594,7 +592,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             )?);
             Ok(())
         } else if siblings.len() == 1 {
-            final_root = Some(siblings[0].clone());
+            final_root = Some(siblings[0]);
             Ok(())
         } else {
             let mut pt_remain = path_types.clone();
@@ -616,9 +614,9 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                 if final_root.is_none() && (sib != H::hash_zero()) {
                     let new_node_type = ptype.deduce_downgrade_type(p); // atRight = path[i]
                     let new_node: CalculatedNode<H> = if p {
-                        Node::<H>::new_parent_node(new_node_type, sib, to_upload.clone())
+                        Node::<H>::new_parent_node(new_node_type, sib, to_upload)
                     } else {
-                        Node::<H>::new_parent_node(new_node_type, to_upload.clone(), sib)
+                        Node::<H>::new_parent_node(new_node_type, to_upload, sib)
                     }
                     .try_into()?;
                     let new_node_hash = new_node.node_hash();
@@ -647,7 +645,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             if final_root.is_none() {
                 // if all sibling is zero, stop and store the sibling of the
                 // deleted leaf as root
-                final_root = Some(to_upload.clone());
+                final_root = Some(to_upload);
             }
             Ok(())
         }?;
@@ -670,9 +668,9 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
     ) -> Result<H, ImplError> {
         for ((sib, p), pt) in siblings.iter().zip(path).zip(path_types).rev() {
             let n: CalculatedNode<H> = if p {
-                Node::<H>::new_parent_node(*pt, sib.clone(), node_hash)
+                Node::<H>::new_parent_node(*pt, *sib, node_hash)
             } else {
-                Node::<H>::new_parent_node(*pt, node_hash, sib.clone())
+                Node::<H>::new_parent_node(*pt, node_hash, *sib)
             }
             .try_into()?;
             node_hash = n.node_hash();
