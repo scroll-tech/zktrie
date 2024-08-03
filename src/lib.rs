@@ -170,7 +170,7 @@ mod tests {
 
         for bts in EXAMPLE {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
-            db.add_node_bytes(&buf).unwrap();
+            db.add_node_data(&buf).unwrap();
         }
 
         let root = hex::decode("194cfd0c3cce58ac79c5bab34b149927e0cd9280c6d61870bfb621d45533ddbc")

@@ -62,6 +62,17 @@ impl ZkTrieNode {
             .map_err(|e| e.to_string())
     }
 
+    pub fn parse_with_key(data: &[u8], key: &[u8]) -> Result<Self, String> {
+        types::Node::new_node_from_bytes(data)
+            .and_then(|mut n| {
+                let h = HashImpl::from_bytes(key)?;
+                n.set_node_hash(h);
+                Ok(n)
+            })
+            .map(|n| Self { trie_node: n })
+            .map_err(|e| e.to_string())
+    }
+
     pub fn node_hash(&self) -> Hash {
         self.trie_node
             .clone()
@@ -146,15 +157,23 @@ impl ZkMemoryDb {
         })
     }
 
-    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8], key: Option<&[u8]>) -> Result<(), ErrString> {
         if data == MAGICSMTBYTES {
             return Ok(());
         }
-        let n = ZkTrieNode::parse(data)?;
+        let n = if let Some(key) = key {
+            ZkTrieNode::parse_with_key(data, key)
+        } else {
+            ZkTrieNode::parse(data)
+        }?;
         self.db
             .borrow_mut()
             .put(n.node_hash().to_vec(), n.trie_node.canonical_value())
             .map_err(|e| e.to_string())
+    }
+
+    pub fn add_node_data(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+        self.add_node_bytes(data, None)
     }
 
     // the zktrie can be created only if the corresponding root node has been added
