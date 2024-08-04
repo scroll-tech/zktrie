@@ -348,7 +348,12 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
         } else {
             let ret = self.db.get(&node_hash.to_bytes());
             match ret {
-                Ok(bytes) => Node::new_node_from_bytes(&bytes),
+                Ok(bytes) => Node::new_node_from_bytes(&bytes)
+                    .map(|mut n| {
+                        // help to reduce hash calculation
+                        n.set_node_hash(node_hash.clone());
+                        n
+                    }),
                 Err(e) => Err(e),
             }
         }
