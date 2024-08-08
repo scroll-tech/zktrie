@@ -157,19 +157,31 @@ pub type ErrString = String;
 
 const MAGICSMTBYTES: &[u8] = "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI".as_bytes();
 
+impl Default for ZkMemoryDb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZkMemoryDb {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {
+    pub fn new() -> Self {
+        Self {
             db: RefCell::new(db::SimpleDb::new()),
             key_db: HashMap::new(),
-        })
+        }
     }
 
-    pub fn add_node_bytes(
-        self: &mut Rc<Self>,
-        data: &[u8],
-        key: Option<&[u8]>,
-    ) -> Result<(), ErrString> {
+    pub fn with_key_cache<'a>(mut self, data: impl Iterator<Item = (&'a [u8], &'a [u8])>) -> Self {
+        for (k, v) in data {
+            // TODO: here we silently omit any invalid hash value
+            if let Ok(h) = HashImpl::from_bytes(v) {
+                self.key_db.insert(Vec::from(k), h);
+            }
+        }
+        self
+    }
+
+    pub fn add_node_bytes(&self, data: &[u8], key: Option<&[u8]>) -> Result<(), ErrString> {
         if data == MAGICSMTBYTES {
             return Ok(());
         }
@@ -184,7 +196,7 @@ impl ZkMemoryDb {
             .map_err(|e| e.to_string())
     }
 
-    pub fn add_node_data(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+    pub fn add_node_data(&self, data: &[u8]) -> Result<(), ErrString> {
         self.add_node_bytes(data, None)
     }
 

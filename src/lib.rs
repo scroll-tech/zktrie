@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn trie_works() {
         init_hash_scheme_simple(poseidon_hash_scheme);
-        let mut db = ZkMemoryDb::new();
+        let db = std::rc::Rc::new(ZkMemoryDb::new());
 
         for bts in EXAMPLE {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
