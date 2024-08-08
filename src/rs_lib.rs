@@ -1,5 +1,5 @@
 use super::constants::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use zktrie_rust::{
     db::ZktrieDatabase,
     types::{Hashable, TrieHashScheme},
@@ -124,6 +124,7 @@ impl ZkTrieNode {
 #[derive(Clone)]
 pub struct ZkMemoryDb {
     db: RefCell<db::SimpleDb>,
+    key_db: HashMap<Vec<u8>, HashImpl>,
 }
 
 #[derive(Clone)]
@@ -135,6 +136,12 @@ impl db::ZktrieDatabase for SharedMemoryDb {
     }
     fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
         self.0.db.borrow().get(k)
+    }
+}
+
+impl trie::KeyCache<HashImpl> for SharedMemoryDb {
+    fn get_key(&self, k: &[u8]) -> Option<&HashImpl> {
+        self.0.key_db.get(k)
     }
 }
 
@@ -154,10 +161,15 @@ impl ZkMemoryDb {
     pub fn new() -> Rc<Self> {
         Rc::new(Self {
             db: RefCell::new(db::SimpleDb::new()),
+            key_db: HashMap::new(),
         })
     }
 
-    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8], key: Option<&[u8]>) -> Result<(), ErrString> {
+    pub fn add_node_bytes(
+        self: &mut Rc<Self>,
+        data: &[u8],
+        key: Option<&[u8]>,
+    ) -> Result<(), ErrString> {
         if data == MAGICSMTBYTES {
             return Ok(());
         }
