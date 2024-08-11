@@ -42,7 +42,6 @@ pub enum ImplError {
 impl Error for ImplError {}
 
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
-#[derive(Clone)]
 pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase> {
     db: DB,
     root_hash: H,
@@ -76,6 +75,14 @@ impl<H: Hashable> CalculatedNode<H> {
 impl<H: Hashable, DB: ZktrieDatabase> ZkTrieImpl<H, DB> {
     pub fn new_zktrie_impl(storage: DB, max_levels: u32) -> Result<Self, ImplError> {
         Self::new_zktrie_impl_with_root(storage, H::hash_zero(), max_levels)
+    }
+
+    pub fn get_db(&self) -> &DB {
+        &self.db
+    }
+
+    pub fn into_db(self) -> DB {
+        self.db
     }
 
     /// new_zktrie_implWithRoot loads a new ZkTrieImpl. If in the storage already exists one

@@ -15,12 +15,8 @@ pub trait KeyCache<H: Hashable> {
 // New and must have an attached database. The database also stores
 // the preimage of each key.
 //
-// ZkTrie is not safe for concurrent use.
-
-#[derive(Clone)]
 pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> {
     tree: ZkTrieImpl<H, DB>,
-    key_cache: DB,
 }
 
 // NODE_KEY_VALID_BYTES is the number of least significant bytes in the node key
@@ -38,11 +34,8 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     // underlying diskdb
     pub fn new_zktrie(root: H, db: DB) -> Result<Self, ImplError> {
         let max_levels = NODE_KEY_VALID_BYTES * 8;
-        let tr = ZkTrieImpl::new_zktrie_impl_with_root(db.clone(), root, max_levels);
-        let t = ZkTrie {
-            tree: tr?,
-            key_cache: db,
-        };
+        let tr = ZkTrieImpl::new_zktrie_impl_with_root(db, root, max_levels);
+        let t = ZkTrie { tree: tr? };
         Ok(t)
     }
 
@@ -50,7 +43,7 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     // The value bytes must not be modified by the caller.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_get(&self, key: &[u8]) -> Vec<u8> {
-        let node = if let Some(k) = self.key_cache.get_key(key) {
+        let node = if let Some(k) = self.tree.get_db().get_key(key) {
             self.tree.try_get(k)
         } else {
             let k = Node::<H>::hash_bytes(key).unwrap();
@@ -60,8 +53,8 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     }
 
     // Tree exposed underlying ZkTrieImpl
-    pub fn tree(&self) -> ZkTrieImpl<H, DB> {
-        self.tree.clone()
+    pub fn tree(self) -> ZkTrieImpl<H, DB> {
+        self.tree
     }
 
     // TryUpdate associates key with value in the trie. Subsequent calls to
@@ -80,23 +73,23 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
         v_flag: u32,
         v_preimage: Vec<[u8; 32]>,
     ) -> Result<(), ImplError> {
-        if let Some(k) = self.key_cache.get_key(key) {
-            self.tree.try_update(k, v_flag, v_preimage)
+        let k = if let Some(k) = self.tree.get_db().get_key(key) {
+            k.clone()
         } else {
-            let k = Node::<H>::hash_bytes(key).unwrap();
-            self.tree.try_update(&k, v_flag, v_preimage)
-        }
+            Node::<H>::hash_bytes(key).unwrap()
+        };
+        self.tree.try_update(&k, v_flag, v_preimage)
     }
 
     // TryDelete removes any existing value for key from the trie.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_delete(&mut self, key: &[u8]) -> Result<(), ImplError> {
-        if let Some(k) = self.key_cache.get_key(key) {
-            self.tree.try_delete(k)
+        let k = if let Some(k) = self.tree.get_db().get_key(key) {
+            k.clone()
         } else {
-            let k = Node::<H>::hash_bytes(key).unwrap();
-            self.tree.try_delete(&k)
-        }
+            Node::<H>::hash_bytes(key).unwrap()
+        };
+        self.tree.try_delete(&k)
     }
 
     // Hash returns the root hash of SecureBinaryTrie. It does not write to the

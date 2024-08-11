@@ -1,6 +1,6 @@
 use crate::raw::ImplError;
 use std::collections::HashMap;
-pub trait ZktrieDatabase: Clone {
+pub trait ZktrieDatabase {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), ImplError>;
     fn get(&self, k: &[u8]) -> Result<Vec<u8>, ImplError>;
 }
@@ -13,6 +13,10 @@ pub struct SimpleDb {
 impl SimpleDb {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.db.extend(other.db);
     }
 }
 

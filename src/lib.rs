@@ -164,13 +164,16 @@ mod tests {
 
     #[test]
     fn trie_works() {
+        use std::rc::Rc;
+
         init_hash_scheme_simple(poseidon_hash_scheme);
-        let db = std::rc::Rc::new(ZkMemoryDb::new());
+        let mut db = ZkMemoryDb::new();
 
         for bts in EXAMPLE {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
             db.add_node_data(&buf).unwrap();
         }
+        let mut db = Rc::new(db);
 
         let root = hex::decode("194cfd0c3cce58ac79c5bab34b149927e0cd9280c6d61870bfb621d45533ddbc")
             .unwrap();
@@ -241,6 +244,12 @@ mod tests {
         let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
+        assert!(db.new_ref_trie(&root).is_none());
+
+        let trie_db = trie.updated_db();
+        Rc::get_mut(&mut db).expect("no reference").update(trie_db);
+        let trie = db.new_ref_trie(&root).unwrap();
+
         let proof = trie.prove(&acc_buf).unwrap();
 
         assert_eq!(proof.len(), 8);
@@ -264,6 +273,8 @@ mod tests {
             hex::decode("01ffffffffffffffffffffffffffffffffffffffffffd5a5fa65b10989405cd7")
                 .unwrap(),
         );
+
+        let mut trie = db.new_trie(&root).unwrap();
 
         trie.delete(&acc_buf);
         assert!(trie.get_account(&acc_buf).is_none());
