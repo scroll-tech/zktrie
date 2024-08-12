@@ -25,7 +25,10 @@ All the zktrie can share one underlying database, which can be initialized by pu
 let mut db = ZkMemoryDb::new();
 
 /* for some trie node data encoded as bytes `buf` */
-db.add_node_bytes(&buf).unwrap();
+db.add_node_data(&buf).unwrap();
+
+/* or if we have both trie node data and key encoded as bytes */
+db.add_node_bytes(&buf, Some(&key)).unwrap();
 
 ```
 
