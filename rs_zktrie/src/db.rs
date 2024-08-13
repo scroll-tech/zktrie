@@ -1,31 +1,36 @@
 use crate::raw::ImplError;
 use std::collections::HashMap;
-use std::rc::Rc;
-
-pub trait ZktrieDatabase: Clone {
+pub trait ZktrieDatabase {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), ImplError>;
-    fn get(&self, k: &[u8]) -> Result<Rc<[u8]>, ImplError>;
+    fn get(&self, k: &[u8]) -> Result<&[u8], ImplError>;
 }
 
 #[derive(Clone, Default)]
 pub struct SimpleDb {
-    db: HashMap<Box<[u8]>, Rc<[u8]>>,
+    db: HashMap<Box<[u8]>, Box<[u8]>>,
 }
 
 impl SimpleDb {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn merge(&mut self, other: Self) {
+        self.db.extend(other.db);
+    }
 }
 
 impl ZktrieDatabase for SimpleDb {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), ImplError> {
-        self.db.insert(k.into_boxed_slice(), Rc::from(v.into_boxed_slice()));
+        self.db.insert(k.into_boxed_slice(), v.into_boxed_slice());
         Ok(())
     }
 
-    fn get(&self, k: &[u8]) -> Result<Rc<[u8]>, ImplError> {
-        self.db.get(k).cloned().ok_or(ImplError::ErrKeyNotFound)
+    fn get(&self, k: &[u8]) -> Result<&[u8], ImplError> {
+        self.db
+            .get(k)
+            .map(|v| v.as_ref())
+            .ok_or(ImplError::ErrKeyNotFound)
     }
 }
 

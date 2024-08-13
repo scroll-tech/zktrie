@@ -2,6 +2,10 @@ use crate::db::ZktrieDatabase;
 use crate::raw::{ImplError, ZkTrieImpl};
 use crate::types::{Hashable, Node, NodeType, TrieHashScheme};
 
+pub trait KeyCache<H: Hashable> {
+    fn get_key(&self, k: &[u8]) -> Option<&H>;
+}
+
 // ZkTrie wraps a trie with key hashing. In a secure trie, all
 // access operations hash the key using keccak256. This prevents
 // calling code from creating long chains of nodes that
@@ -11,12 +15,10 @@ use crate::types::{Hashable, Node, NodeType, TrieHashScheme};
 // New and must have an attached database. The database also stores
 // the preimage of each key.
 //
-// ZkTrie is not safe for concurrent use.
 
 const MAX_LEVELS: usize = (NODE_KEY_VALID_BYTES * 8) as usize;
 
-#[derive(Clone)]
-pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase> {
+pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> {
     tree: ZkTrieImpl<H, DB, MAX_LEVELS>,
 }
 
@@ -29,7 +31,7 @@ pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase> {
 // causing a soundness issue in the zk circuit.
 const NODE_KEY_VALID_BYTES: u32 = 31;
 
-impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
+impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     pub const MAX_LEVELS: usize = MAX_LEVELS;
 
     // NewSecure creates a trie
@@ -45,14 +47,18 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
     // The value bytes must not be modified by the caller.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_get(&self, key: &[u8]) -> Vec<u8> {
-        let k = Node::<H>::hash_bytes(key).unwrap();
-        let node = self.tree.try_get(&k);
+        let node = if let Some(k) = self.tree.get_db().get_key(key) {
+            self.tree.try_get(k)
+        } else {
+            let k = Node::<H>::hash_bytes(key).unwrap();
+            self.tree.try_get(&k)
+        };
         node.ok().and_then(|n| n.data()).unwrap_or_default()
     }
 
     // Tree exposed underlying ZkTrieImpl
-    pub fn tree(&self) -> ZkTrieImpl<H, DB, MAX_LEVELS> {
-        self.tree.clone()
+    pub fn tree(self) -> ZkTrieImpl<H, DB, MAX_LEVELS> {
+        self.tree
     }
 
     // TryUpdate associates key with value in the trie. Subsequent calls to
@@ -71,14 +77,22 @@ impl<H: Hashable, DB: ZktrieDatabase> ZkTrie<H, DB> {
         v_flag: u32,
         v_preimage: Vec<[u8; 32]>,
     ) -> Result<(), ImplError> {
-        let k = Node::<H>::hash_bytes(key).unwrap();
+        let k = if let Some(k) = self.tree.get_db().get_key(key) {
+            k.clone()
+        } else {
+            Node::<H>::hash_bytes(key).unwrap()
+        };
         self.tree.try_update(&k, v_flag, v_preimage)
     }
 
     // TryDelete removes any existing value for key from the trie.
     // If a node was not found in the database, a MissingNodeError is returned.
     pub fn try_delete(&mut self, key: &[u8]) -> Result<(), ImplError> {
-        let k = Node::<H>::hash_bytes(key).unwrap();
+        let k = if let Some(k) = self.tree.get_db().get_key(key) {
+            k.clone()
+        } else {
+            Node::<H>::hash_bytes(key).unwrap()
+        };
         self.tree.try_delete(&k)
     }
 
