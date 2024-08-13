@@ -377,7 +377,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                 if i > 0 && n.is_terminal() {
                     if last_node_type == NodeTypeBranch3 {
                         panic!("parent node has invalid type: children are not terminal")
-                    } else if path[i- 1] && last_node_type == NodeTypeBranch1 {
+                    } else if path[i - 1] && last_node_type == NodeTypeBranch1 {
                         panic!("parent node has invalid type: right child is not terminal")
                     } else if !path[i - 1] && last_node_type == NodeTypeBranch2 {
                         panic!("parent node has invalid type: left child is not terminal")
@@ -410,6 +410,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         Err(ImplError::ErrKeyNotFound)
     }
 
+    // note: unused method that also returns siblings
     // fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
     //     let path = Self::get_path(node_key);
     //     let mut next_hash = self.root_hash.clone();
