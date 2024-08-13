@@ -5,7 +5,6 @@ pub type SimpleHashSchemeFn = fn(&[u8; 32], &[u8; 32], &[u8; 32]) -> Option<[u8;
 use std::sync::OnceLock;
 static HASHSCHEME: OnceLock<SimpleHashSchemeFn> = OnceLock::new();
 
-
 #[cfg(not(feature = "rs_zktrie"))]
 pub mod go_lib;
 #[cfg(not(feature = "rs_zktrie"))]
@@ -22,11 +21,10 @@ pub use rs_lib::*;
 pub mod rs_lib;
 #[cfg(feature = "rs_zktrie")]
 pub fn init_hash_scheme_simple(f: SimpleHashSchemeFn) {
-   HASHSCHEME.set(f).unwrap_or_default()
+    HASHSCHEME.set(f).unwrap_or_default()
 }
 
-
-#[allow(unused)]
+#[allow(dead_code)]
 extern "C" fn c_hash_scheme_adapter(
     a: *const u8,
     b: *const u8,
@@ -166,13 +164,16 @@ mod tests {
 
     #[test]
     fn trie_works() {
+        use std::rc::Rc;
+
         init_hash_scheme_simple(poseidon_hash_scheme);
         let mut db = ZkMemoryDb::new();
 
         for bts in EXAMPLE {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
-            db.add_node_bytes(&buf).unwrap();
+            db.add_node_data(&buf).unwrap();
         }
+        let mut db = Rc::new(db);
 
         let root = hex::decode("194cfd0c3cce58ac79c5bab34b149927e0cd9280c6d61870bfb621d45533ddbc")
             .unwrap();
@@ -243,6 +244,12 @@ mod tests {
         let root: Hash = root.as_slice().try_into().unwrap();
         assert_eq!(trie.root(), root);
 
+        assert!(db.new_ref_trie(&root).is_none());
+
+        let trie_db = trie.updated_db();
+        Rc::get_mut(&mut db).expect("no reference").update(trie_db);
+        let trie = db.new_ref_trie(&root).unwrap();
+
         let proof = trie.prove(&acc_buf).unwrap();
 
         assert_eq!(proof.len(), 8);
@@ -266,6 +273,8 @@ mod tests {
             hex::decode("01ffffffffffffffffffffffffffffffffffffffffffd5a5fa65b10989405cd7")
                 .unwrap(),
         );
+
+        let mut trie = db.new_trie(&root).unwrap();
 
         trie.delete(&acc_buf);
         assert!(trie.get_account(&acc_buf).is_none());

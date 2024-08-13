@@ -1,5 +1,5 @@
 use super::constants::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 use zktrie_rust::{
     db::ZktrieDatabase,
     types::{Hashable, TrieHashScheme},
@@ -62,6 +62,17 @@ impl ZkTrieNode {
             .map_err(|e| e.to_string())
     }
 
+    pub fn parse_with_key(data: &[u8], key: &[u8]) -> Result<Self, String> {
+        types::Node::new_node_from_bytes(data)
+            .and_then(|mut n| {
+                let h = HashImpl::from_bytes(key)?;
+                n.set_node_hash(h);
+                Ok(n)
+            })
+            .map(|n| Self { trie_node: n })
+            .map_err(|e| e.to_string())
+    }
+
     pub fn node_hash(&self) -> Hash {
         self.trie_node
             .clone()
@@ -112,75 +123,170 @@ impl ZkTrieNode {
 
 #[derive(Clone)]
 pub struct ZkMemoryDb {
-    db: RefCell<db::SimpleDb>,
+    db: db::SimpleDb,
+    key_db: HashMap<Vec<u8>, HashImpl>,
 }
 
 #[derive(Clone)]
-struct SharedMemoryDb(Rc<ZkMemoryDb>);
+pub struct SharedMemoryDb(Rc<ZkMemoryDb>);
 
 impl db::ZktrieDatabase for SharedMemoryDb {
-    fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), raw::ImplError> {
-        self.0.db.borrow_mut().put(k, v)
+    fn put(&mut self, _: Vec<u8>, _: Vec<u8>) -> Result<(), raw::ImplError> {
+        Err(raw::ImplError::ErrNotWritable)
     }
     fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
-        self.0.db.borrow().get(k)
+        self.0.db.get(k)
+    }
+}
+
+impl trie::KeyCache<HashImpl> for SharedMemoryDb {
+    fn get_key(&self, k: &[u8]) -> Option<&HashImpl> {
+        self.0.key_db.get(k)
+    }
+}
+
+#[derive(Clone)]
+pub struct UpdateDb(db::SimpleDb, Rc<ZkMemoryDb>);
+
+impl UpdateDb {
+    pub fn updated_db(self) -> db::SimpleDb {
+        self.0
+    }
+}
+
+impl db::ZktrieDatabase for UpdateDb {
+    fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), raw::ImplError> {
+        self.0.put(k, v)
+    }
+    fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
+        let ret = self.0.get(k);
+        if ret.is_ok() {
+            ret
+        } else {
+            self.1.db.get(k)
+        }
+    }
+}
+
+impl trie::KeyCache<HashImpl> for UpdateDb {
+    fn get_key(&self, k: &[u8]) -> Option<&HashImpl> {
+        self.1.key_db.get(k)
     }
 }
 
 use trie::ZkTrie as ZktrieRs;
 
-#[derive(Clone)]
-pub struct ZkTrie {
-    trie: ZktrieRs<HashImpl, SharedMemoryDb>,
-    binding_db: Rc<ZkMemoryDb>,
-}
+pub struct ZkTrie<DB: ZktrieDatabase + trie::KeyCache<HashImpl>>(ZktrieRs<HashImpl, DB>);
 
 pub type ErrString = String;
 
 const MAGICSMTBYTES: &[u8] = "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI".as_bytes();
 
+impl Default for ZkMemoryDb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZkMemoryDb {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {
-            db: RefCell::new(db::SimpleDb::new()),
-        })
+    pub fn new() -> Self {
+        Self {
+            db: db::SimpleDb::new(),
+            key_db: HashMap::new(),
+        }
     }
 
-    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+    pub fn with_key_cache<'a>(&mut self, data: impl Iterator<Item = (&'a [u8], &'a [u8])>) {
+        for (k, v) in data {
+            // TODO: here we silently omit any invalid hash value
+            if let Ok(h) = HashImpl::from_bytes(v) {
+                self.key_db.insert(Vec::from(k), h);
+            }
+        }
+    }
+
+    pub fn add_node_bytes(&mut self, data: &[u8], key: Option<&[u8]>) -> Result<(), ErrString> {
         if data == MAGICSMTBYTES {
             return Ok(());
         }
-        let n = ZkTrieNode::parse(data)?;
+        let n = if let Some(key) = key {
+            ZkTrieNode::parse_with_key(data, key)
+        } else {
+            ZkTrieNode::parse(data)
+        }?;
         self.db
-            .borrow_mut()
             .put(n.node_hash().to_vec(), n.trie_node.canonical_value())
             .map_err(|e| e.to_string())
     }
 
-    // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie> {
+    pub fn add_node_data(&mut self, data: &[u8]) -> Result<(), ErrString> {
+        self.add_node_bytes(data, None)
+    }
+
+    pub fn update(&mut self, updated_db: db::SimpleDb) {
+        self.db.merge(updated_db);
+    }
+
+    /// the zktrie can be created only if the corresponding root node has been added
+    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie<UpdateDb>> {
+        HashImpl::from_bytes(root.as_slice())
+            .ok()
+            .and_then(|h| ZktrieRs::new_zktrie(h, UpdateDb(Default::default(), self.clone())).ok())
+            .map(ZkTrie)
+    }
+
+    /// the zktrie can be created only if the corresponding root node has been added
+    pub fn new_ref_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie<SharedMemoryDb>> {
         HashImpl::from_bytes(root.as_slice())
             .ok()
             .and_then(|h| ZktrieRs::new_zktrie(h, SharedMemoryDb(self.clone())).ok())
-            .map(|tr| ZkTrie {
-                trie: tr,
-                binding_db: self.clone(),
-            })
+            .map(ZkTrie)
     }
 }
 
-impl ZkTrie {
-    pub fn root(&self) -> Hash {
-        self.trie.hash().as_slice().try_into().expect("same length")
+impl ZkTrie<UpdateDb> {
+    pub fn updated_db(self) -> db::SimpleDb {
+        self.0.tree().into_db().updated_db()
     }
 
-    pub fn get_db(&self) -> Rc<ZkMemoryDb> {
-        self.binding_db.clone()
+    fn update(&mut self, key: &[u8], value: &[[u8; FIELDSIZE]]) -> Result<(), ErrString> {
+        let v_flag = match value.len() {
+            1 => 1,
+            4 => 4,
+            5 => 8,
+            _ => return Err("unexpected buffer type".to_string()),
+        };
+
+        self.0
+            .try_update(key, v_flag, value.to_vec())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn update_store(&mut self, key: &[u8], value: &StoreData) -> Result<(), ErrString> {
+        self.update(key, &[*value])
+    }
+
+    pub fn update_account(
+        &mut self,
+        key: &[u8],
+        acc_fields: &AccountData,
+    ) -> Result<(), ErrString> {
+        self.update(key, acc_fields)
+    }
+
+    pub fn delete(&mut self, key: &[u8]) {
+        self.0.try_delete(key).ok();
+    }
+}
+
+impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
+    pub fn root(&self) -> Hash {
+        self.0.hash().as_slice().try_into().expect("same length")
     }
 
     // all errors are reduced to "not found"
     fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
-        let ret = self.trie.try_get(key);
+        let ret = self.0.try_get(key);
         if ret.len() != T {
             None
         } else {
@@ -206,41 +312,12 @@ impl ZkTrie {
 
         let s_key = Node::<HashImpl>::hash_bytes(key).map_err(|e| e.to_string())?;
 
-        let (proof, _) = self.trie.prove(s_key.as_ref()).map_err(|e| e.to_string())?;
+        let (proof, _) = self.0.prove(s_key.as_ref()).map_err(|e| e.to_string())?;
 
         Ok(proof
             .into_iter()
             .map(|n| n.value())
             .chain(std::iter::once(MAGICSMTBYTES.to_vec()))
             .collect())
-    }
-
-    fn update(&mut self, key: &[u8], value: &[[u8; FIELDSIZE]]) -> Result<(), ErrString> {
-        let v_flag = match value.len() {
-            1 => 1,
-            4 => 4,
-            5 => 8,
-            _ => return Err("unexpected buffer type".to_string()),
-        };
-
-        self.trie
-            .try_update(key, v_flag, value.to_vec())
-            .map_err(|e| e.to_string())
-    }
-
-    pub fn update_store(&mut self, key: &[u8], value: &StoreData) -> Result<(), ErrString> {
-        self.update(key, &[*value])
-    }
-
-    pub fn update_account(
-        &mut self,
-        key: &[u8],
-        acc_fields: &AccountData,
-    ) -> Result<(), ErrString> {
-        self.update(key, acc_fields)
-    }
-
-    pub fn delete(&mut self, key: &[u8]) {
-        self.trie.try_delete(key).ok();
     }
 }
