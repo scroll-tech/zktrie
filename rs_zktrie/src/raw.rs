@@ -410,6 +410,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         Err(ImplError::ErrKeyNotFound)
     }
 
+    // note: unused method that also returns siblings
     // fn try_get_with_path(&self, node_key: &H) -> Result<(Node<H>, Vec<H>), ImplError> {
     //     let path = Self::get_path(node_key);
     //     let mut next_hash = self.root_hash.clone();
