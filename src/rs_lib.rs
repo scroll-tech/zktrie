@@ -134,7 +134,7 @@ impl db::ZktrieDatabase for SharedMemoryDb {
     fn put(&mut self, _: Vec<u8>, _: Vec<u8>) -> Result<(), raw::ImplError> {
         Err(raw::ImplError::ErrNotWritable)
     }
-    fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
+    fn get(&self, k: &[u8]) -> Result<&[u8], raw::ImplError> {
         self.0.db.get(k)
     }
 }
@@ -158,7 +158,7 @@ impl db::ZktrieDatabase for UpdateDb {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), raw::ImplError> {
         self.0.put(k, v)
     }
-    fn get(&self, k: &[u8]) -> Result<Vec<u8>, raw::ImplError> {
+    fn get(&self, k: &[u8]) -> Result<&[u8], raw::ImplError> {
         let ret = self.0.get(k);
         if ret.is_ok() {
             ret
