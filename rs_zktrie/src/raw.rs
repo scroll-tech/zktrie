@@ -42,7 +42,6 @@ pub enum ImplError {
 impl Error for ImplError {}
 
 // ZkTrieImpl is the struct with the main elements of the ZkTrieImpl
-#[derive(Clone)]
 pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> {
     db: DB,
     root_hash: H,
@@ -77,12 +76,17 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         Self::new_zktrie_impl_with_root(storage, H::hash_zero())
     }
 
+    pub fn get_db(&self) -> &DB {
+        &self.db
+    }
+
+    pub fn into_db(self) -> DB {
+        self.db
+    }
+
     /// new_zktrie_implWithRoot loads a new ZkTrieImpl. If in the storage already exists one
     /// will open that one, if not, will create a new one.
-    pub fn new_zktrie_impl_with_root(
-        storage: DB,
-        root: H,
-    ) -> Result<Self, ImplError> {
+    pub fn new_zktrie_impl_with_root(storage: DB, root: H) -> Result<Self, ImplError> {
         let not_zero_root = root != H::hash_zero();
         let mt = ZkTrieImpl {
             db: storage,
@@ -346,7 +350,11 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         } else {
             let ret = self.db.get(&node_hash.to_bytes());
             match ret {
-                Ok(bytes) => Node::new_node_from_bytes(&bytes),
+                Ok(bytes) => Node::new_node_from_bytes(&bytes).map(|mut n| {
+                    // help to reduce hash calculation
+                    n.set_node_hash(node_hash.clone());
+                    n
+                }),
                 Err(e) => Err(e),
             }
         }

@@ -342,6 +342,19 @@ impl<H: Hashable> Node<H> {
         Ok(self)
     }
 
+    /// Set NodeHash, if node hash has been calculated,
+    /// we would compare and complain for unmatch
+    pub fn set_node_hash(&mut self, hash: H) {
+        if let Some(existed_hash) = &self.node_hash {
+            assert_eq!(
+                existed_hash, &hash,
+                "the set hash must be equal to calculated one"
+            );
+        } else {
+            self.node_hash.replace(hash);
+        }
+    }
+
     /// Return the nodehash, in case it is not calculated, we get None
     pub fn node_hash(&self) -> Option<H> {
         self.node_hash.clone()
