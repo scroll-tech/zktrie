@@ -1,5 +1,6 @@
 //mod trie;
 #![feature(slice_flatten)]
+
 pub mod db;
 pub mod hash;
 pub mod raw;

@@ -15,8 +15,11 @@ pub trait KeyCache<H: Hashable> {
 // New and must have an attached database. The database also stores
 // the preimage of each key.
 //
+
+const MAX_LEVELS: usize = (NODE_KEY_VALID_BYTES * 8) as usize;
+
 pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> {
-    tree: ZkTrieImpl<H, DB>,
+    tree: ZkTrieImpl<H, DB, MAX_LEVELS>,
 }
 
 // NODE_KEY_VALID_BYTES is the number of least significant bytes in the node key
@@ -29,12 +32,13 @@ pub struct ZkTrie<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> {
 const NODE_KEY_VALID_BYTES: u32 = 31;
 
 impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
+    pub const MAX_LEVELS: usize = MAX_LEVELS;
+
     // NewSecure creates a trie
     // SecureBinaryTrie bypasses all the buffer mechanism in *Database, it directly uses the
     // underlying diskdb
     pub fn new_zktrie(root: H, db: DB) -> Result<Self, ImplError> {
-        let max_levels = NODE_KEY_VALID_BYTES * 8;
-        let tr = ZkTrieImpl::new_zktrie_impl_with_root(db, root, max_levels);
+        let tr = ZkTrieImpl::new_zktrie_impl_with_root(db, root);
         let t = ZkTrie { tree: tr? };
         Ok(t)
     }
@@ -53,7 +57,7 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     }
 
     // Tree exposed underlying ZkTrieImpl
-    pub fn tree(self) -> ZkTrieImpl<H, DB> {
+    pub fn tree(self) -> ZkTrieImpl<H, DB, MAX_LEVELS> {
         self.tree
     }
 
