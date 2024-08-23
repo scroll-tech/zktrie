@@ -280,7 +280,7 @@ impl ZkTrie<UpdateDb> {
 }
 
 impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
-    pub fn root(&self) -> Hash {
+    pub fn root(&mut self) -> Hash {
         self.0.hash().as_slice().try_into().expect("same length")
     }
 
