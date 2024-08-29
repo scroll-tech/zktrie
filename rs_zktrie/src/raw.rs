@@ -1,6 +1,7 @@
 use crate::db::ZktrieDatabase;
 use crate::types::NodeType::*;
 use crate::types::{Hashable, Node, NodeType};
+use log::warn;
 use num_derive::FromPrimitive;
 use std::collections::HashMap;
 use std::error::Error;
@@ -47,7 +48,7 @@ pub struct ZkTrieImpl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> 
     root_hash: H,
     writable: bool,
     debug: bool,
-    lock: RwLock<u8>,
+    lock: RwLock<()>,
     dirty_index: usize,
     dirty_storage: HashMap<Vec<u8>, Node<H>>,
 }
@@ -83,6 +84,10 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         &self.db
     }
 
+    pub fn is_trie_dirty(&self) -> bool {
+        self.dirty_index != 0
+    }
+
     pub fn into_db(self) -> DB {
         self.db
     }
@@ -96,7 +101,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             writable: true,
             root_hash: root,
             debug: false,
-            lock: RwLock::new(1),
+            lock: RwLock::new(()),
             dirty_index: 0,
             dirty_storage: HashMap::new(),
         };
@@ -110,7 +115,21 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
     }
 
     /// Root returns the MerkleRoot
-    pub fn root(&mut self) -> H {
+    pub fn root(&self) -> H {
+        if self.debug {
+            self.get_node(&self.root_hash)
+                .unwrap_or_else(|_| panic!("load trie root failed hash {:?}", self.root_hash));
+        }
+
+        if self.is_trie_dirty() {
+            warn!("Trie is dirty. The returned root hash may not reflect recent changes.");
+        }
+
+        self.root_hash.clone()
+    }
+
+    /// Compute root
+    pub fn prepare_root(&mut self) -> Result<(), ImplError> {
         let _lock = self.lock.write().unwrap();
         if self.dirty_index != 0 {
             let mut hashed_dirty_storage = HashMap::<Vec<u8>, Node<H>>::new();
@@ -118,7 +137,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                 .calc_commitment(
                     &self.root_hash,
                     &mut hashed_dirty_storage,
-                    &mut RwLock::new(1),
+                    &mut RwLock::new(()),
                 )
                 .unwrap(); // ? would require change in function's definition, avoiding for now, would be part of major refactor
 
@@ -126,11 +145,8 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
             self.dirty_index = 0;
             self.dirty_storage = hashed_dirty_storage;
         }
-        if self.debug {
-            self.get_node(&self.root_hash)
-                .unwrap_or_else(|_| panic!("load trie root failed hash {:?}", self.root_hash));
-        }
-        self.root_hash.clone()
+
+        Ok(())
     }
 
     #[inline]
@@ -142,7 +158,7 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         &self,
         root_key: &H,
         hashed_dirty_storage: &mut HashMap<Vec<u8>, Node<H>>,
-        commit_lock: &mut RwLock<u8>,
+        commit_lock: &mut RwLock<()>,
     ) -> Result<H, ImplError> {
         if !self.is_dirty_node(root_key) {
             return Ok(root_key.clone());
@@ -336,7 +352,6 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                         )?;
                         if !terminate {
                             new_node_type = new_node_type.deduce_upgrade_type(true);
-                            // go right
                         }
                         Node::<H>::new_parent_node(
                             new_node_type,
@@ -354,7 +369,6 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
                         )?;
                         if !terminate {
                             new_node_type = new_node_type.deduce_upgrade_type(false);
-                            // go left
                         }
                         Node::<H>::new_parent_node(
                             new_node_type,

@@ -280,8 +280,16 @@ impl ZkTrie<UpdateDb> {
 }
 
 impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
-    pub fn root(&mut self) -> Hash {
+    pub fn root(&self) -> Hash {
         self.0.hash().as_slice().try_into().expect("same length")
+    }
+
+    pub fn is_trie_dirty(&self) -> bool {
+        self.0.is_trie_dirty()
+    }
+
+    pub fn prepare_root(&mut self) {
+        self.0.prepare_root().expect("prepare root failed");
     }
 
     // all errors are reduced to "not found"
