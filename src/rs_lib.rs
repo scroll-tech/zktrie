@@ -284,6 +284,14 @@ impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
         self.0.hash().as_slice().try_into().expect("same length")
     }
 
+    pub fn is_trie_dirty(&self) -> bool {
+        self.0.is_trie_dirty()
+    }
+
+    pub fn prepare_root(&mut self) {
+        self.0.prepare_root().expect("prepare root failed");
+    }
+
     // all errors are reduced to "not found"
     fn get<const T: usize>(&self, key: &[u8]) -> Option<[u8; T]> {
         let ret = self.0.try_get(key);

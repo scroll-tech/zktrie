@@ -61,6 +61,15 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
         self.tree
     }
 
+    // Commit flushes the trie to database
+    pub fn commit(&mut self) -> Result<(), ImplError> {
+        self.tree.commit()
+    }
+
+    pub fn is_trie_dirty(&self) -> bool {
+        self.tree.is_trie_dirty()
+    }
+
     // TryUpdate associates key with value in the trie. Subsequent calls to
     // Get will return value. If value has length zero, any existing value
     // is deleted from the trie and calls to Get will return nil.
@@ -100,6 +109,11 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     // database and can be used even if the trie doesn't have one.
     pub fn hash(&self) -> Vec<u8> {
         self.tree.root().to_bytes()
+    }
+
+    pub fn prepare_root(&mut self) -> Result<(), ImplError> {
+        self.tree.prepare_root()?;
+        Ok(())
     }
 
     // Prove constructs a merkle proof for key. The result contains all encoded nodes
