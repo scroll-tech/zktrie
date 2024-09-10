@@ -180,6 +180,11 @@ mod tests {
         let root: Hash = root.as_slice().try_into().unwrap();
 
         let mut trie = db.new_trie(&root).unwrap();
+
+        if trie.is_trie_dirty() {
+            trie.prepare_root();
+        }
+
         assert_eq!(trie.root(), root);
 
         let acc_buf = hex::decode("1C5A77d9FA7eF466951B2F01F724BCa3A5820b63").unwrap();
@@ -223,6 +228,9 @@ mod tests {
                 .unwrap();
         root.reverse();
         let root: Hash = root.as_slice().try_into().unwrap();
+        if trie.is_trie_dirty() {
+            trie.prepare_root();
+        }
         assert_eq!(trie.root(), root);
 
         let newacc: AccountData = [
@@ -242,9 +250,15 @@ mod tests {
                 .unwrap();
         root.reverse();
         let root: Hash = root.as_slice().try_into().unwrap();
+        if trie.is_trie_dirty() {
+            trie.prepare_root();
+        }
         assert_eq!(trie.root(), root);
 
         assert!(db.new_ref_trie(&root).is_none());
+
+        // the zktrie can be created only if the corresponding root node has been added
+        trie.commit().unwrap();
 
         let trie_db = trie.updated_db();
         Rc::get_mut(&mut db).expect("no reference").update(trie_db);
@@ -280,6 +294,9 @@ mod tests {
         assert!(trie.get_account(&acc_buf).is_none());
 
         trie.update_account(&acc_buf, &newacc).unwrap();
+        if trie.is_trie_dirty() {
+            trie.prepare_root();
+        }
         assert_eq!(trie.root(), root);
     }
 }
