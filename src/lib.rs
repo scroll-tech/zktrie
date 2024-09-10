@@ -250,7 +250,7 @@ mod tests {
         Rc::get_mut(&mut db).expect("no reference").update(trie_db);
         let trie = db.new_ref_trie(&root).unwrap();
 
-        let proof = trie.prove(&acc_buf).unwrap();
+        let proof = trie.prove(&acc_buf, false).unwrap();
 
         assert_eq!(proof.len(), 8);
         assert_eq!(proof[7], hex::decode("5448495320495320534f4d45204d4147494320425954455320464f5220534d54206d3172525867503278704449").unwrap());

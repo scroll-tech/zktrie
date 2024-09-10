@@ -536,6 +536,60 @@ impl<H: Hashable, DB: ZktrieDatabase, const MAX_LEVELS: usize> ZkTrieImpl<H, DB,
         }
     }
 
+    /// prove soft constructs a merkle proof like prove, but end at the node ABOVE
+    /// terminal node, since terminal node maybe not accessable without deletion proof
+    /// currently it is used by ccc
+    pub fn prove_soft(&self, node_key: &H) -> Result<Vec<Node<H>>, ImplError> {
+        let path = Self::get_path(node_key);
+        let mut next_hash = self.root_hash.clone();
+        let mut nodes = Vec::with_capacity(MAX_LEVELS);
+        for p in path.iter() {
+            let n = self.get_node(&next_hash)?;
+            let finished = match n.node_type {
+                NodeTypeEmptyNew | NodeTypeLeafNew => {
+                    // the only possible to encounter this node
+                    return Ok(Vec::new())
+                },
+                // both terminal
+                NodeTypeBranch0 => true,
+                // left (*p == 0) is terminal
+                NodeTypeBranch1 => if *p {
+                    next_hash = n.child_right.clone().expect("node should has this child");
+                    false
+                } else {
+                    true
+                }
+                // right (*p == 1) is terminal
+                NodeTypeBranch2 =>  if *p {
+                    true
+                } else {
+                    next_hash = n.child_left.clone().expect("node should has this child");
+                    false
+                }
+                // both are not terminal
+                NodeTypeBranch3 => {
+                    if *p {
+                        next_hash = n.child_right.clone().expect("node should has this child");
+                    } else {
+                        next_hash = n.child_left.clone().expect("node should has this child");
+                    };
+                    false
+                }
+                NodeTypeEmpty | NodeTypeLeaf | NodeTypeParent => {
+                    unreachable!("encounter deprecated node types")
+                }
+                _ => unreachable!(),
+            };
+
+            nodes.push(n);
+            if finished {
+                break;
+            }
+        }
+
+        Ok(nodes)
+    }
+
     // prove constructs a merkle proof for SMT, it respect the protocol used by the ethereum-trie
     // but save the node data with a compact form
     pub fn prove(&self, node_key: &H) -> Result<Vec<Node<H>>, ImplError> {
