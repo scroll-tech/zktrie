@@ -1,5 +1,5 @@
 use super::constants::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, sync::Arc};
 use zktrie_rust::{
     db::ZktrieDatabase,
     types::{Hashable, TrieHashScheme},
@@ -116,7 +116,7 @@ pub struct ZkMemoryDb {
 }
 
 #[derive(Clone)]
-struct SharedMemoryDb(Rc<ZkMemoryDb>);
+struct SharedMemoryDb(Arc<ZkMemoryDb>);
 
 impl db::ZktrieDatabase for SharedMemoryDb {
     fn put(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<(), raw::ImplError> {
@@ -132,7 +132,7 @@ use trie::ZkTrie as ZktrieRs;
 #[derive(Clone)]
 pub struct ZkTrie {
     trie: ZktrieRs<HashImpl, SharedMemoryDb>,
-    binding_db: Rc<ZkMemoryDb>,
+    binding_db: Arc<ZkMemoryDb>,
 }
 
 pub type ErrString = String;
@@ -140,13 +140,13 @@ pub type ErrString = String;
 const MAGICSMTBYTES: &[u8] = "THIS IS SOME MAGIC BYTES FOR SMT m1rRXgP2xpDI".as_bytes();
 
 impl ZkMemoryDb {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
             db: RefCell::new(db::SimpleDb::new()),
         })
     }
 
-    pub fn add_node_bytes(self: &mut Rc<Self>, data: &[u8]) -> Result<(), ErrString> {
+    pub fn add_node_bytes(self: &mut Arc<Self>, data: &[u8]) -> Result<(), ErrString> {
         if data == MAGICSMTBYTES {
             return Ok(());
         }
@@ -158,7 +158,7 @@ impl ZkMemoryDb {
     }
 
     // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie> {
+    pub fn new_trie(self: &Arc<Self>, root: &Hash) -> Option<ZkTrie> {
         HashImpl::from_bytes(root.as_slice())
             .ok()
             .and_then(|h| ZktrieRs::new_zktrie(h, SharedMemoryDb(self.clone())).ok())
@@ -174,7 +174,7 @@ impl ZkTrie {
         self.trie.hash().as_slice().try_into().expect("same length")
     }
 
-    pub fn get_db(&self) -> Rc<ZkMemoryDb> {
+    pub fn get_db(&self) -> Arc<ZkMemoryDb> {
         self.binding_db.clone()
     }
 

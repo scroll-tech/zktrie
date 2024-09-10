@@ -1,7 +1,7 @@
 use super::constants::*;
 use std::ffi::{self, c_char, c_int, c_void};
 use std::marker::{PhantomData, PhantomPinned};
-use std::{fmt, rc::Rc};
+use std::{fmt, sync::Arc};
 
 #[repr(C)]
 struct MemoryDb {
@@ -185,7 +185,7 @@ impl ZkTrieNode {
 
 pub struct ZkTrie {
     trie: *mut Trie,
-    binding_db: Rc<ZkMemoryDb>,
+    binding_db: Arc<ZkMemoryDb>,
 }
 
 impl Drop for ZkTrie {
@@ -249,7 +249,7 @@ impl ZkTrie {
         must_get_hash(unsafe { TrieRoot(self.trie) })
     }
 
-    pub fn get_db(&self) -> Rc<ZkMemoryDb> {
+    pub fn get_db(&self) -> Arc<ZkMemoryDb> {
         self.binding_db.clone()
     }
 
