@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn trie_works() {
-        use std::rc::Rc;
+        use std::sync::Arc;
 
         init_hash_scheme_simple(poseidon_hash_scheme);
         let mut db = ZkMemoryDb::new();
@@ -173,7 +173,7 @@ mod tests {
             let buf = hex::decode(bts.get(2..).unwrap()).unwrap();
             db.add_node_data(&buf).unwrap();
         }
-        let mut db = Rc::new(db);
+        let mut db = Arc::new(db);
 
         let root = hex::decode("194cfd0c3cce58ac79c5bab34b149927e0cd9280c6d61870bfb621d45533ddbc")
             .unwrap();
@@ -261,7 +261,7 @@ mod tests {
         trie.commit().unwrap();
 
         let trie_db = trie.updated_db();
-        Rc::get_mut(&mut db).expect("no reference").update(trie_db);
+        Arc::get_mut(&mut db).expect("no reference").update(trie_db);
         let trie = db.new_ref_trie(&root).unwrap();
 
         let proof = trie.prove(&acc_buf).unwrap();
