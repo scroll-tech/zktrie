@@ -284,6 +284,10 @@ impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
         self.0.hash().as_slice().try_into().expect("same length")
     }
 
+    pub fn commit(&mut self) -> Result<(), ErrString> {
+        self.0.commit().map_err(|e| e.to_string())
+    }
+
     pub fn is_trie_dirty(&self) -> bool {
         self.0.is_trie_dirty()
     }
