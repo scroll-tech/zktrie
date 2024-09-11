@@ -114,8 +114,16 @@ impl<H: Hashable, DB: ZktrieDatabase + KeyCache<H>> ZkTrie<H, DB> {
     // If the trie contain a non-empty leaf for key, the `bool` in returned tuple is true
     pub fn prove(&self, key_hash_byte: &[u8], is_soft: bool) -> Result<(Vec<Node<H>>, bool), ImplError> {
         let key_hash = H::from_bytes(key_hash_byte)?;
-        let proof = if is_soft {self.tree.prove_soft(&key_hash)}
-                    else {self.tree.prove(&key_hash)}?;
+        let proof = if is_soft {
+            self.tree.prove_soft(&key_hash)
+            .map(|mut proof|{
+                // add a dummy leaf node to keep the consistent of format
+                proof.push(Node::new_empty_node());
+                proof
+            })
+        } else {
+            self.tree.prove(&key_hash)
+        }?;
         let mut hit = false;
 
         for n in &proof {
