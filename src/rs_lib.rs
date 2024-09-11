@@ -307,12 +307,12 @@ impl<DB: db::ZktrieDatabase + trie::KeyCache<HashImpl>> ZkTrie<DB> {
     }
 
     // build prove array for mpt path
-    pub fn prove(&self, key: &[u8]) -> Result<Vec<Vec<u8>>, ErrString> {
+    pub fn prove(&self, key: &[u8], is_soft: bool) -> Result<Vec<Vec<u8>>, ErrString> {
         use types::Node;
 
         let s_key = Node::<HashImpl>::hash_bytes(key).map_err(|e| e.to_string())?;
 
-        let (proof, _) = self.0.prove(s_key.as_ref()).map_err(|e| e.to_string())?;
+        let (proof, _) = self.0.prove(s_key.as_ref(), is_soft).map_err(|e| e.to_string())?;
 
         Ok(proof
             .into_iter()
