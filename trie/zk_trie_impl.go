@@ -350,17 +350,18 @@ func (mt *ZkTrieImpl) calcCommitment(rootKey *zkt.Hash, hashedDirtyNodes map[zkt
 	return rootHash, nil
 }
 
-func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
+func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, error) {
 
 	path := getPath(mt.maxLevels, nodeKey[:])
-	nextKey := mt.rootKey
-	var siblings []*zkt.Hash
+	var nextKey zkt.Hash
+	nextKey.Set(mt.rootKey)
+	n := new(Node)
 	//sanity check
 	lastNodeType := NodeTypeBranch_3
 	for i := 0; i < mt.maxLevels; i++ {
-		n, err := mt.getNode(nextKey)
+		err := mt.getNodeTo(&nextKey, n)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		//sanity check
 		if i > 0 && n.IsTerminal() {
@@ -376,28 +377,26 @@ func (mt *ZkTrieImpl) tryGet(nodeKey *zkt.Hash) (*Node, []*zkt.Hash, error) {
 		lastNodeType = n.Type
 		switch n.Type {
 		case NodeTypeEmpty_New:
-			return NewEmptyNode(), siblings, ErrKeyNotFound
+			return NewEmptyNode(), ErrKeyNotFound
 		case NodeTypeLeaf_New:
 			if bytes.Equal(nodeKey[:], n.NodeKey[:]) {
-				return n, siblings, nil
+				return n, nil
 			}
-			return n, siblings, ErrKeyNotFound
+			return n, ErrKeyNotFound
 		case NodeTypeBranch_0, NodeTypeBranch_1, NodeTypeBranch_2, NodeTypeBranch_3:
 			if path[i] {
-				nextKey = n.ChildR
-				siblings = append(siblings, n.ChildL)
+				nextKey.Set(n.ChildR)
 			} else {
-				nextKey = n.ChildL
-				siblings = append(siblings, n.ChildR)
+				nextKey.Set(n.ChildL)
 			}
 		case NodeTypeEmpty, NodeTypeLeaf, NodeTypeParent:
 			panic("encounter deprecated node types")
 		default:
-			return nil, nil, ErrInvalidNodeFound
+			return nil, ErrInvalidNodeFound
 		}
 	}
 
-	return nil, siblings, ErrReachedMaxLevel
+	return nil, ErrReachedMaxLevel
 }
 
 // TryGet returns the value for key stored in the trie.
@@ -407,7 +406,7 @@ func (mt *ZkTrieImpl) TryGet(nodeKey *zkt.Hash) ([]byte, error) {
 	mt.lock.RLock()
 	defer mt.lock.RUnlock()
 
-	node, _, err := mt.tryGet(nodeKey)
+	node, err := mt.tryGet(nodeKey)
 	if err == ErrKeyNotFound {
 		// according to https://github.com/ethereum/go-ethereum/blob/37f9d25ba027356457953eab5f181c98b46e9988/trie/trie.go#L135
 		return nil, nil
@@ -523,7 +522,7 @@ func (mt *ZkTrieImpl) GetLeafNode(nodeKey *zkt.Hash) (*Node, error) {
 	mt.lock.RLock()
 	defer mt.lock.RUnlock()
 
-	n, _, err := mt.tryGet(nodeKey)
+	n, err := mt.tryGet(nodeKey)
 	return n, err
 }
 
@@ -537,20 +536,29 @@ func (mt *ZkTrieImpl) GetNode(nodeHash *zkt.Hash) (*Node, error) {
 	return mt.getNode(nodeHash)
 }
 
-func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
+func (mt *ZkTrieImpl) getNodeTo(nodeHash *zkt.Hash, node *Node) error {
 	if bytes.Equal(nodeHash[:], zkt.HashZero[:]) {
-		return NewEmptyNode(), nil
+		*node = *NewEmptyNode()
+		return nil
 	}
-	if node, found := mt.dirtyStorage[*nodeHash]; found {
-		return node, nil
+	if dirtyNode, found := mt.dirtyStorage[*nodeHash]; found {
+		*node = *dirtyNode.Copy()
+		return nil
 	}
 	nBytes, err := mt.db.Get(nodeHash[:])
-	if err == ErrKeyNotFound {
-		return nil, ErrKeyNotFound
-	} else if err != nil {
+	if err != nil {
+		return err
+	}
+
+	return node.SetBytes(nBytes)
+}
+
+func (mt *ZkTrieImpl) getNode(nodeHash *zkt.Hash) (*Node, error) {
+	var n Node
+	if err := mt.getNodeTo(nodeHash, &n); err != nil {
 		return nil, err
 	}
-	return NewNodeFromBytes(nBytes)
+	return &n, nil
 }
 
 // getPath returns the binary path, from the root to the leaf.

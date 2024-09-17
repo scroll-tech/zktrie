@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"slices"
 	"sync"
 )
 
@@ -80,7 +81,16 @@ func (h Hash) Hex() string {
 
 // BigInt returns the *big.Int representation of the *Hash
 func (h *Hash) BigInt() *big.Int {
-	return big.NewInt(0).SetBytes(ReverseByteOrder(h[:]))
+	return big.NewInt(0).SetBytes(h.Bytes())
+}
+
+// SetBytes sets the value of the hash from the given big endian byte array
+func (h *Hash) SetBytes(b []byte) {
+	*h = HashZero
+	_ = h[len(b)-1] // eliminate range checks
+	for i := 0; i < len(b); i++ {
+		h[len(b)-i-1] = b[i]
+	}
 }
 
 // Bytes returns the byte representation of the *Hash in big-endian encoding.
@@ -88,7 +98,20 @@ func (h *Hash) BigInt() *big.Int {
 func (h *Hash) Bytes() []byte {
 	b := [HashByteLen]byte{}
 	copy(b[:], h[:])
-	return ReverseByteOrder(b[:])
+	slices.Reverse(b[:])
+	return b[:]
+}
+
+// Set copies the given hash in to this
+func (h *Hash) Set(other *Hash) {
+	*h = *other
+}
+
+// Copy copies the given hash in to this
+func (h *Hash) Clone() *Hash {
+	var clone Hash
+	clone.Set(h)
+	return &clone
 }
 
 // NewBigIntFromHashBytes returns a *big.Int from a byte array, swapping the
@@ -108,9 +131,8 @@ func NewBigIntFromHashBytes(b []byte) (*big.Int, error) {
 
 // NewHashFromBigInt returns a *Hash representation of the given *big.Int
 func NewHashFromBigInt(b *big.Int) *Hash {
-	r := &Hash{}
-	copy(r[:], ReverseByteOrder(b.Bytes()))
-	return r
+	var bytes [HashByteLen]byte
+	return NewHashFromBytes(b.FillBytes(bytes[:]))
 }
 
 // NewHashFromBytes returns a *Hash from a byte array considered to be
@@ -118,7 +140,7 @@ func NewHashFromBigInt(b *big.Int) *Hash {
 // in the process.
 func NewHashFromBytes(b []byte) *Hash {
 	var h Hash
-	copy(h[:], ReverseByteOrder(b))
+	h.SetBytes(b)
 	return &h
 }
 
