@@ -1,5 +1,5 @@
 use super::constants::*;
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 use zktrie_rust::{
     db::ZktrieDatabase,
     types::{Hashable, TrieHashScheme},
@@ -128,7 +128,7 @@ pub struct ZkMemoryDb {
 }
 
 #[derive(Clone)]
-pub struct SharedMemoryDb(Rc<ZkMemoryDb>);
+pub struct SharedMemoryDb(Arc<ZkMemoryDb>);
 
 impl db::ZktrieDatabase for SharedMemoryDb {
     fn put(&mut self, _: Vec<u8>, _: Vec<u8>) -> Result<(), raw::ImplError> {
@@ -146,7 +146,7 @@ impl trie::KeyCache<HashImpl> for SharedMemoryDb {
 }
 
 #[derive(Clone)]
-pub struct UpdateDb(db::SimpleDb, Rc<ZkMemoryDb>);
+pub struct UpdateDb(db::SimpleDb, Arc<ZkMemoryDb>);
 
 impl UpdateDb {
     pub fn updated_db(self) -> db::SimpleDb {
@@ -228,7 +228,7 @@ impl ZkMemoryDb {
     }
 
     /// the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie<UpdateDb>> {
+    pub fn new_trie(self: &Arc<Self>, root: &Hash) -> Option<ZkTrie<UpdateDb>> {
         HashImpl::from_bytes(root.as_slice())
             .ok()
             .and_then(|h| ZktrieRs::new_zktrie(h, UpdateDb(Default::default(), self.clone())).ok())
@@ -236,7 +236,7 @@ impl ZkMemoryDb {
     }
 
     /// the zktrie can be created only if the corresponding root node has been added
-    pub fn new_ref_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie<SharedMemoryDb>> {
+    pub fn new_ref_trie(self: &Arc<Self>, root: &Hash) -> Option<ZkTrie<SharedMemoryDb>> {
         HashImpl::from_bytes(root.as_slice())
             .ok()
             .and_then(|h| ZktrieRs::new_zktrie(h, SharedMemoryDb(self.clone())).ok())

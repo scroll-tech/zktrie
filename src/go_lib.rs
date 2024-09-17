@@ -219,7 +219,7 @@ impl ZkMemoryDb {
     }
 
     // the zktrie can be created only if the corresponding root node has been added
-    pub fn new_trie(self: &Rc<Self>, root: &Hash) -> Option<ZkTrie> {
+    pub fn new_trie(self: &Arc<Self>, root: &Hash) -> Option<ZkTrie> {
         let ret = unsafe { NewZkTrie(root.as_ptr(), self.db) };
 
         if ret.is_null() {
