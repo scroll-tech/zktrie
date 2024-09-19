@@ -1,4 +1,8 @@
-# zkTrie Spec
+# zkTrie
+
+This document describes zkTrie, a sparse binary Merkle Patricia Trie used to store key-value pairs efficiently. It explains the tree structure, construction, node hashing, and tree operations, including insertion and deletion.
+
+You can also explore our [zktrie repo](https://github.com/scroll-tech/zktrie).
 
 ## 1. Tree Structure
 
