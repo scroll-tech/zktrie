@@ -10,7 +10,7 @@
 In essence, zkTrie is a sparse binary Merkle Patricia Trie, depicted in the above figure.
 Before diving into the Sparse Binary Merkle Patricia Trie, let's briefly touch on Merkle Trees and Patricia Tries.
 * **Merkle Tree**: A Merkle Tree is a tree where each leaf node represents a hash of a data block, and each non-leaf node represents the hash of its child nodes.
-* **Patricia Trie**: A Patricia Trie is a type of radix tree or compressed trie used to store key-value pairs efficiently. It encodes the nodes with same prefix of the key to share the common path, where the path is determined by the value of the node key.
+* **Patricia Trie**: A Patricia Trie is a type of radix tree or compressed trie used to store key-value pairs efficiently. It encodes the nodes with the same prefix of the key to share the common path, where the path is determined by the value of the node key.
 
 As illustrated in the Figure 1, there are three types of nodes in the zkTrie.
 - Parent Node (type: 0): Given the zkTrie is a binary tree, a parent node has two children.
@@ -138,7 +138,7 @@ valLo = storageKey[16:32]
 nodeKey = h(valHi, valLo)
 ```
 
-The storage value is a `u256` value. The `flag` for the storage value is 1, showed below.
+The storage value is a `u256` value. The `flag` for the storage value is 1, shown below.
 
 ```
 +--------------+

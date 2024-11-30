@@ -2,7 +2,7 @@
 
 ## Data Format in stateDb
 
-All data node being stored via stateDb are encoded by following syntax:
+All data nodes being stored via stateDb are encoded by following syntax:
 
 ``` EBNF
     node             =  magic string | node data ;
@@ -90,7 +90,7 @@ Each account data is saved in one leaf node of account zktrie as 4 `value field`
 3. CodeHash as `compressed field` (byte32)
 4. Storage root as `field`
 
-The key for an account data is calculated from the 20-bit account address as following:
+The key for an account data is calculated from the 20-bit account address as follows:
 
 ```
 
@@ -106,7 +106,7 @@ key = poseidon(<first 16 byte of 32-byte-zero-end-padding-addr as field>, <last 
 
 > 0x017f9d3bbc51d12566ecc6049ca6bf76e32828c22b197405f63a833b566fe7da0a040400000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000029b74e075daad9f17eb39cd893c2dd32f52ecd99084d63964842defd00ebcbe208a2f471d50e56ac5000ab9e82f871e36b5a636b19bd02f70aa666a3bd03142f00
 
-Can be decompose to:
+Can be decomposed to:
 
 + `0x01`: node type prefix for leaf node
 + `7f9d3bbc51d12566ecc6049ca6bf76e32828c22b197405f63a833b566fe7da0a`: node key as field
